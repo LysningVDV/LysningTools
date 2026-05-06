@@ -1,0 +1,41 @@
+Metadata-Version: 2.4
+Name: lysning_casresolver
+Version: 1.0.0
+Summary: Multi-source CAS → SMILES resolver with PubChem, ChemSpider, Cactus, OPSIN, and RDKit fallback
+Author: Lysning Innovation Consultants
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Chemistry
+Classifier: License :: OSI Approved :: MIT License
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.20
+Requires-Dist: pandas>=1.4
+Requires-Dist: openpyxl>=3.0
+Dynamic: author
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# Lysning CAS Resolver
+
+Multi-source CAS number to SMILES resolver with offline caching and API placeholders.
+
+## Installation
+```
+pip install -e .
+```
+
+## Usage
+```
+lysning_casresolver input.xlsx -o output.xlsx
+```
+You need an Excel or CSV file where the first column lists CAS numbers. The resolver will look up values in a local cache (cas_smiles_output.xlsx) by default.
+
+### Configuration
+Update `config.json` to specify API keys or alternate cache file.

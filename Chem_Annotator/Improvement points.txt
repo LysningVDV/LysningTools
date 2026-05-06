@@ -1,0 +1,17 @@
+
+Chem_annotator
+- certain anthranilates captured as primary alcohol
+- Fix Sulphur / Nitrogen count
+
+Physprops
+
+Cas Resolver
+- handle naturals/multiple CAS
+- naturals marker
+- speed up!
+
+ALl programs
+- avoid sleepmode while running (all programs)
+- create output folder
+- avoid automatic overwriting
+

@@ -1,0 +1,40 @@
+# ======================================================
+# Do NOT commit data, outputs, or binaries
+# ======================================================
+
+# --- Canonical DB live + artifacts ---
+canonical_physchemprops.xlsx
+canonical_physchemprops*.xlsx
+canonical_audit_*.xlsx
+canonical_physchemprops.rejected_*.xlsx
+backups/
+
+# --- Tool outputs ---
+physprops_export_wide__*.xlsx
+output_cas_results__*.xlsx
+smiles_counts*.xlsx
+smiles_counts*.csv
+invalid_smiles.csv
+
+# --- Data / Office / binary files ---
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.pptx
+*.docx
+*.pdf
+*.zip
+*.7z
+*.rar
+
+# --- Python ---
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

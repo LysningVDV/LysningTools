@@ -1,0 +1,123 @@
+[
+  {
+    "name": "ethanol_primary_alcohol",
+    "smiles": "CCO",
+    "expected": {
+      "Valid": 1,
+      "PrimaryAlcoholCount": 1,
+      "TotalAlcoholCount": 1,
+      "PhenolCount": 0
+    }
+  },
+  {
+    "name": "aryl_oxime_not_counted_as_alcohol",
+    "smiles": "COC(=O)c1ccccc1N=C(C)O",
+    "expected": {
+      "Valid": 1,
+      "OximeCount": 1,
+      "TotalAlcoholCount": 0
+    }
+  },
+  {
+    "name": "simple_aliphatic_aldehyde_unsubstituted",
+    "smiles": "CCC=O",
+    "expected": {
+      "Valid": 1,
+      "AldehydeCount": 1,
+      "ArylAldehydeCount": 0,
+      "CyclicAliphaticAldehydeCount": 0,
+      "AldehydeCount_NoAlphaBetaSub": 1,
+      "AlphaBetaUnsaturatedAldehydeCount": 0
+    }
+  },
+  {
+    "name": "enal_alpha_beta_unsaturated",
+    "smiles": "O=CC=CC",
+    "expected": {
+      "Valid": 1,
+      "AldehydeCount": 1,
+      "AlphaBetaUnsaturatedAldehydeCount": 1,
+      "ArylAldehydeCount": 0,
+      "CyclicAliphaticAldehydeCount": 0
+    }
+  },
+  {
+    "name": "aryl_aldehyde_counts_as_aryl_not_cyclic_beta",
+    "smiles": "O=Cc1ccccc1",
+    "expected": {
+      "Valid": 1,
+      "AldehydeCount": 1,
+      "ArylAldehydeCount": 1,
+      "AlphaBetaUnsaturatedAldehydeCount": 1,
+      "CyclicAliphaticAldehydeCount": 0,
+      "CyclicAldehyde_BetaSubCount_0": 0,
+      "CyclicAldehyde_BetaSubCount_1": 0,
+      "CyclicAldehyde_BetaSubCount_2": 0
+    }
+  },
+  {
+    "name": "cyclic_aliphatic_aldehyde_beta0_bucket",
+    "smiles": "O=CC1CCCCC1",
+    "expected": {
+      "Valid": 1,
+      "AldehydeCount": 1,
+      "CyclicAliphaticAldehydeCount": 1,
+      "ArylAldehydeCount": 0,
+      "CyclicAldehyde_BetaSubCount_0": 1
+    }
+  },
+  {
+    "name": "macrocyclic_ketone_musk_indicator",
+    "smiles": "O=C1CCCCCCCCCCC1",
+    "expected": {
+      "Valid": 1,
+      "MacroMusks_Total": 1,
+      "MacroMusks_Ketones": 1,
+      "MacroMusks_Lactones": 0
+    }
+  },
+  {
+    "name": "halogen_subtypes_present_simple_chlorophenol",
+    "smiles": "Oc1ccc(Cl)cc1",
+    "expected": {
+      "Valid": 1,
+      "HalogenAtomCount_Cl": 1,
+      "HalogenAtomCount_Total": 1,
+      "HalogenatedCarbonCount_Cl": 1
+    }
+  },
+  {
+    "name": "sulfur_sulfone_not_sulfoxide",
+    "smiles": "CS(=O)(=O)C",
+    "expected": {
+      "Valid": 1,
+      "SulfoneCount": 1,
+      "SulfoxideCount": 0
+    }
+  },
+  {
+    "name": "invalid_smiles_schema_guard",
+    "smiles": "NOT_A_SMILES",
+    "expected": { "Valid": 0 }
+  },
+  {
+    "name": "indole_core_marker",
+    "smiles": "c1ccc2[nH]ccc2c1",
+    "expected": { "Valid": 1, "IndoleCount": 1 }
+  },
+  {
+    "name": "furan_marker",
+    "smiles": "o1cccc1",
+    "expected": { "Valid": 1, "FuranCount": 1 }
+  },
+  {
+    "name": "methyl_acrylate_marker",
+    "smiles": "C=CC(=O)OC",
+    "expected": { "Valid": 1, "AcrylateEsterCount": 1, "MethacrylateEsterCount": 0 }
+  },
+  {
+    "name": "methyl_methacrylate_marker",
+    "smiles": "C=C(C)C(=O)OC",
+    "expected": { "Valid": 1, "MethacrylateEsterCount": 1, "AcrylateEsterCount": 0 }
+  }
+]

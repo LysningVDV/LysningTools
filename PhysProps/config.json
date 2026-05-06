@@ -1,0 +1,48 @@
+{
+  "pubchem": {
+    "timeout_seconds": 15,
+    "max_retries": 3,
+    "retry_delay_seconds": 0.8
+  },
+
+  "rdkit": {
+    "sanitize_molecules": true
+  },
+
+  "fallbacks": {
+    "enable": true,
+    "notes": "Fallback values are crude heuristics and should be used only when experimental data is absent."
+  },
+
+  "units": {
+    "temperature_output": "celsius",
+    "vapor_pressure_output": "pa",
+    "density_output": "g/ml",
+    "solubility_output": "mg/l",
+    "heat_of_vaporization_output": "kj/mol",
+    "critical_pressure_output": "bar"
+  },
+
+  "identifier_detection": {
+    "priority_order": [
+      "smiles",
+      "inchi",
+      "inchikey",
+      "cas",
+      "name"
+    ],
+    "strict_validation": true,
+    "column_name_patterns": {
+      "smiles": ["smiles", "structure", "struct", "smile"],
+      "inchi": ["inchi", "inchi string"],
+      "inchikey": ["inchikey", "inchi key"],
+      "cas": ["cas", "cas no", "cas number", "cas nr"],
+      "name": ["name", "chemical", "substance", "compound"]
+    }
+  },
+
+  "logging": {
+    "default_level": "INFO",
+    "date_format": "%Y-%m-%d %H:%M:%S"
+  }
+}

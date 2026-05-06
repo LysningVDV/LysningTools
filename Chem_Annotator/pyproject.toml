@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chem_annotator"
+version = "0.1.0"
+description = "Chemical feature extraction toolkit"
+authors = [{name="Volkert de Villeneuve"}]
+dependencies = ["rdkit"]
+
+[tool.setuptools.packages.find]
+where = ["."]

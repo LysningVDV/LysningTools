@@ -1,0 +1,2 @@
+[console_scripts]
+physprops = physprops.main:cli

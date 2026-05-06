@@ -1,0 +1,51 @@
+{
+  "resolver_order": [
+    "pubchem",
+    "chemspider",
+    "cactus",
+    "opsin",
+    "rdkit"
+  ],
+
+  "timeouts": {
+    "pubchem": 10,
+    "chemspider": 15,
+    "cactus": 8,
+    "opsin": 8
+  },
+
+  "retries": {
+    "pubchem": 3,
+    "chemspider": 3,
+    "cactus": 3,
+    "opsin": 3
+  },
+
+  "retry_delay_seconds": 1.5,
+
+  "cache": {
+    "json_cache_path": "~/.lysning_casresolver/cache.json"
+  },
+
+  "chemspider": {
+    "api_key": "INSERT_YOUR_KEY_HERE"
+  },
+
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  },
+
+  "name_normalization": {
+    "strip_accents": true,
+    "lowercase": true,
+    "collapse_whitespace": true,
+    "strip_trailing_punctuation": true
+  },
+
+  "rdkit": {
+    "enable_mw_computation": true,
+    "enable_inchikey_generation": true,
+    "canonicalize_smiles": true
+  }
+}
