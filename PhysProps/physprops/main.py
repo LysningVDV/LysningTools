@@ -267,7 +267,7 @@ def resolve_identifier(value: str, id_type: str) -> Dict[str, Any]:
     """
 
     if value is None or str(value).strip() == "":
-        return {"warnings": ["Empty identifier"], "timestamp": datetime.datetime.utcnow().isoformat()}
+        return {"warnings": ["Empty identifier"], "timestamp": datetime.datetime.now("UTC").isoformat()}
 
     cleaned = clean_whitespace(value)
     normalized = normalize_identifier(cleaned, id_type)
@@ -299,7 +299,7 @@ def resolve_identifier(value: str, id_type: str) -> Dict[str, Any]:
     # --- Merge final fields ---
     flat = build_final_fields(flat)
 
-    flat["timestamp"] = datetime.utcnow().isoformat()
+    flat["timestamp"] = datetime.now("UTC").isoformat()
     return flat
 
 
@@ -332,7 +332,7 @@ def process_row(row, candidates):
         rec = {
             "input": None,
             "warnings": w,
-            "timestamp": datetime.datetime.utcnow().isoformat()
+            "timestamp": datetime.datetime.now("UTC").isoformat()
         }
         CACHE[key] = rec
         return rec
@@ -707,7 +707,7 @@ def cli():
         # Tool-specific audit (overwrite each run)
         audit_df = pd.DataFrame([{
             "tool": "PhysProps",
-            "timestamp_utc": pd.Timestamp.utcnow().isoformat(),
+            "timestamp_utc": pd.Timestamp.now("UTC").isoformat(),
             "input_file": str(Path(args.input_excel).resolve()),
             "wide_export_file": str(Path(wide_export_path).resolve()),
             "legacy_export_file": str(Path(final_output_path).resolve()),

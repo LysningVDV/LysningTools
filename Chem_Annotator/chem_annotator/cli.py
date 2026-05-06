@@ -174,7 +174,7 @@ def main():
 
         audit_df = pd.DataFrame([{
             "tool": "CHEM_Annotator",
-            "timestamp_utc": pd.Timestamp.utcnow().isoformat(),
+            "timestamp_utc": pd.Timestamp.now("UTC").isoformat(),
             "input_file": str(Path(args.input).resolve()),
             "output_file": str(output_file_path),
             "rows_out": int(len(out_df)),
