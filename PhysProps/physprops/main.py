@@ -267,7 +267,7 @@ def resolve_identifier(value: str, id_type: str) -> Dict[str, Any]:
     """
 
     if value is None or str(value).strip() == "":
-        return {"warnings": ["Empty identifier"], "timestamp": datetime.datetime.now("UTC").isoformat()}
+        return {"warnings": ["Empty identifier"], "timestamp": pd.Timestamp.now("UTC").isoformat()}
 
     cleaned = clean_whitespace(value)
     normalized = normalize_identifier(cleaned, id_type)
@@ -299,7 +299,7 @@ def resolve_identifier(value: str, id_type: str) -> Dict[str, Any]:
     # --- Merge final fields ---
     flat = build_final_fields(flat)
 
-    flat["timestamp"] = datetime.now("UTC").isoformat()
+    flat["timestamp"] = pd.Timestamp.now("UTC").isoformat()
     return flat
 
 
@@ -332,7 +332,7 @@ def process_row(row, candidates):
         rec = {
             "input": None,
             "warnings": w,
-            "timestamp": datetime.datetime.now("UTC").isoformat()
+            "timestamp": pd.Timestamp.now("UTC").isoformat()
         }
         CACHE[key] = rec
         return rec

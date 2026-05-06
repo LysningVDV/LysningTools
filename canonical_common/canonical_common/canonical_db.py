@@ -705,6 +705,7 @@ def upsert_canonical(
         ex.loc[common_keys, "timestamp_updated"] = utc_now_iso()
 
     out = ex.reset_index()
+    out = out.copy()
     out = apply_allowlist(out, allowlist)
     out = out.sort_values("inchi_key", kind="mergesort").reset_index(drop=True)
     return out
