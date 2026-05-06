@@ -28,6 +28,7 @@ invalid_smiles.csv
 *.7z
 *.rar
 python_tools_commands.txt
+Lysning_CASResolver/Lysning_CASResolver.txt
 
 # --- Python ---
 __pycache__/
