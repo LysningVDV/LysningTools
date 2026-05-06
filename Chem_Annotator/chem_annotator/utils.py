@@ -1,6 +1,6 @@
 import re
 from html import unescape
-from typing import Dict, List, Tuple
+from typing import List
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem.rdmolops import GetSymmSSSR

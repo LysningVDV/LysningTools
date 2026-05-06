@@ -12,7 +12,7 @@ from rdkit import Chem
 from rdkit.Chem import Fragments
 from rdkit.Chem import rdMolDescriptors as rdMD
 from .schema import make_empty_features, SCHEMA_VERSION
-from .chem_patterns import PATTS, ESTER_PATT
+from .chem_patterns import PATTS
 from .features.alcohols import (
     classify_and_count_alcohols,
     audit_alcohol_sites,
@@ -28,7 +28,7 @@ from .features.unsaturations import (
 )
 from .features.amines import classify_and_count_amines
 from .features.carbonyl import count_lactones_split
-from .features.ethers import count_ethers_excluding_esters, ether_category_counts
+from .features.ethers import ether_category_counts
 from .features.sulfur import (
     count_thiols,
     count_aliphatic_thiols,

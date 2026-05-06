@@ -1,6 +1,5 @@
 import json
 import pathlib
-import pytest
 
 DATA = pathlib.Path(__file__).parent / "regression_cases.json"
 

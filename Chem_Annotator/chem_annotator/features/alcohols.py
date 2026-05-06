@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional
+from typing import List, Optional
 from rdkit import Chem
 from .chem_patterns import (
     OH_PATT,

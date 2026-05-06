@@ -5,10 +5,10 @@ import pandas as pd
 import os
 import time
 import tempfile
-from pandas.api.types import is_numeric_dtype, is_string_dtype, is_object_dtype
+from pandas.api.types import is_numeric_dtype
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 
 
@@ -598,7 +598,6 @@ def sanitize_outgoing(
     return df.reset_index(drop=True), rejected.reset_index(drop=True)
 
 
-from pandas.api.types import is_numeric_dtype
 
 def upsert_canonical(
     existing: pd.DataFrame,

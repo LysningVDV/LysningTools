@@ -5,7 +5,6 @@ Scan chem_annotator/features for ANY suspicious SMARTS, including:
 - Typos like $([NX3=O)_100]
 """
 
-from rdkit import Chem
 import pkgutil, inspect
 import chem_annotator
 

@@ -1,6 +1,5 @@
-from .mapper import build_canonical_row
 from __future__ import annotations
-
+from .mapper import build_canonical_row
 from typing import Dict, Any, Tuple, List
 import pandas as pd
 import numpy as np

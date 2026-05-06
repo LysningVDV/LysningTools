@@ -3,22 +3,13 @@ import os
 import glob
 from datetime import datetime
 from typing import List, Dict, Union, Tuple
-import tempfile
-from pathlib import Path
-import time
-import pandas as pd
 import pandas as pd
 from rdkit import RDLogger
-from rdkit import Chem
 from .utils import clean_smiles
 from .aggregator import features_for_smiles
 from .schema import make_empty_features
 from canonical_common.canonical_db import (
-    load_or_init_allowlist,
-    read_xlsx,
     write_xlsx_atomic,
-    sanitize_outgoing,
-    upsert_canonical,
 )
 
 RDLogger.DisableLog("rdApp.error")  # Silence RDKit parse messages

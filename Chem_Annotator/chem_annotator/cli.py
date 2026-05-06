@@ -5,7 +5,6 @@ import shutil
 from pathlib import Path
 from typing import Union
 from datetime import datetime
-import numpy as np
 import pandas as pd
 
 from .io_utils import read_smiles_excel, process_dataframe, write_outputs

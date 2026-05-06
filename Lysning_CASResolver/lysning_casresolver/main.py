@@ -1,13 +1,11 @@
 import argparse
 import logging
-import sys
 import os
 from datetime import datetime
 from logging.handlers import MemoryHandler
 
 import pandas as pd
 from tqdm import tqdm
-from rdkit import Chem
 
 from .io.excel_io import read_input_excel, write_output_excel
 from .resolution.cas_lookup import resolve_cas

@@ -229,8 +229,6 @@ from typing import Any, Optional
 # Generic null / numeric helpers (used across canonical mapping)
 # ------------------------------------------------------------
 
-import math
-from typing import Any, Optional
 
 def is_null(x: Any) -> bool:
     """

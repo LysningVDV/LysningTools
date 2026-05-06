@@ -1,12 +1,6 @@
-import pandas as pd
-import pytest
 
 from cas_structurer.cas_logic import (
     split_cas_cell,
-    is_valid_cas,
-    normalize_and_repair_token,
-    build_fixed_cas_cell,
-    build_evidence_indexes,
 )
 
 # ------------------------------------------------------------------

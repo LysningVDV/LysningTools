@@ -1,4 +1,3 @@
-import pytest
 from chem_annotator.aggregator import features_for_smiles
 from chem_annotator.schema import FEATURE_DEFAULTS
 

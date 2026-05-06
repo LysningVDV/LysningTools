@@ -1,5 +1,5 @@
 import pandas as pd
-from cas_structurer.cas_logic import normalize_and_repair_token, build_fixed_cas_cell, build_evidence_indexes
+from cas_structurer.cas_logic import normalize_and_repair_token, build_evidence_indexes
 
 def test_adjacent_swap_auto_fix():
     df = pd.DataFrame([])

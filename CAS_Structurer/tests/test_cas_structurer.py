@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from cas_structurer.cas_logic import (
     split_cas_cell,

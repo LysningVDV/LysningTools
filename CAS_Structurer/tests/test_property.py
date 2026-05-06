@@ -1,6 +1,6 @@
 import pytest
 from hypothesis import given, strategies as st
-from cas_structurer.cas_logic import is_valid_cas, normalize_and_repair_token, split_cas_cell
+from cas_structurer.cas_logic import normalize_and_repair_token, split_cas_cell
 
 @given(st.text(min_size=5, max_size=12))
 def test_random_typo_robustness(random_cas):

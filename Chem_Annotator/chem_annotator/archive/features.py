@@ -3,7 +3,7 @@
 # Fully merged and perfumer-validated feature extractor
 # ---------------------------------------------------------------------------
 
-from typing import Dict, Tuple, Union, List
+from typing import Dict, Tuple, Union
 from rdkit import Chem
 from rdkit.Chem import Fragments
 from rdkit.Chem import rdMolDescriptors as rdMD

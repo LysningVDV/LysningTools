@@ -1,4 +1,3 @@
-import pytest
 
 def test_enols_are_alcohols_and_enols(run):
     r = run("C=CO")

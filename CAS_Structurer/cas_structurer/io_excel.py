@@ -6,7 +6,6 @@ import pandas as pd
 from .cas_logic import (
     split_cas_cell,
     is_all_zero_cas_like,
-    is_valid_cas,
     build_evidence_indexes,
     normalize_and_repair_token,
     build_fixed_cas_cell,

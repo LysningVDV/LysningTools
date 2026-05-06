@@ -1,7 +1,6 @@
 """Unsaturation related descriptors."""
 
 from rdkit import Chem
-from ..utils import count_unsaturated_bonds  # legacy: includes aromatic + hetero-atom unsaturation
 
 
 def count_cc_unsaturated_bonds(mol: Chem.Mol) -> int:
