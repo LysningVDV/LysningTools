@@ -780,7 +780,12 @@ def _release_lock(lock_path: Path) -> None:
         pass
 
 
-def write_xlsx_atomic(df: pd.DataFrame, path: str, sheet_name: str = "Sheet1", min_size_bytes: int = 0) -> None:
+def write_xlsx_atomic(
+    df: pd.DataFrame,
+    path: str,
+    sheet_name: str = "Sheet1",
+    min_size_bytes: int = 0
+) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -792,12 +797,16 @@ def write_xlsx_atomic(df: pd.DataFrame, path: str, sheet_name: str = "Sheet1", m
         os.close(fd)
         tmp_path = Path(tmp)
 
+        # Write to temp first
         df.to_excel(tmp_path, index=False, engine="openpyxl", sheet_name=sheet_name)
 
-        # ✅ validate temp BEFORE replacing final
+        # ✅ Validate temp BEFORE replacing final
         if min_size_bytes and tmp_path.stat().st_size < min_size_bytes:
-            raise RuntimeError(f"Refusing suspiciously small temp Excel file: {tmp_path} ({tmp_path.stat().st_size} bytes)")
+            raise RuntimeError(
+                f"Refusing suspiciously small temp Excel file: {tmp_path} ({tmp_path.stat().st_size} bytes)"
+            )
 
+        # Atomic replace
         os.replace(tmp_path, path)
 
     finally:
