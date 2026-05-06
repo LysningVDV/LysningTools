@@ -27,6 +27,7 @@ invalid_smiles.csv
 *.zip
 *.7z
 *.rar
+*.txt
 
 # --- Python ---
 __pycache__/
@@ -38,3 +39,22 @@ __pycache__/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Caches / generated DBs
+*.sqlite
+*.sqlite3
+PhysProps/physprops/sources/**/raw/cache/
+
+# Accidental output artifacts
+PhysProps/output_cas_results.xlsxcd.__*
+PhysProps/pd.DataFrame
+PhysProps/1
+PhysProps/50_000
+
+# Duplicate schema copies (keep only Canonical_DB/canonical_schema.json)
+Chem_Annotator/chem_annotator/canonical_schema.json
