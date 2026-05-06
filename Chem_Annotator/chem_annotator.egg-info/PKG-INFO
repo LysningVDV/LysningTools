@@ -1,6 +1,0 @@
-Metadata-Version: 2.4
-Name: chem_annotator
-Version: 0.1.0
-Summary: Chemical feature extraction toolkit
-Author: Volkert de Villeneuve
-Requires-Dist: rdkit

@@ -1,2 +1,0 @@
-[console_scripts]
-casresolver = lysning_casresolver.main:main
