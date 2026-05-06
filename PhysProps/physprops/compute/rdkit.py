@@ -14,7 +14,7 @@ No experimental values are handled here.
 """
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 
 from rdkit import Chem
 from rdkit.Chem import (

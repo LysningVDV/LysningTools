@@ -12,17 +12,14 @@ Implements:
 Priority Order B for identifiers:
     SMILES > InChI > InChIKey > CAS > Name
 """
-import os
 import argparse
 import logging
 import shutil
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 import pandas as pd
 from rdkit import Chem
-import numpy as np
 from physprops.util.identify import normalize_identifier, detect_identifier_type
 from physprops.util.normalize import clean_whitespace, normalize_cas
 from physprops.sources.pubchem import get_pubchem_properties
@@ -31,11 +28,9 @@ from physprops.sources.fallbacks import apply_fallbacks
 from physprops.io.excel_io import (
     load_excel,
     save_excel,
-    update_canonical_database_from_df,
     integrate_results_into_dataframe,
     export_physprops_wide,
 )
-from physprops.canonical.builder import build_canonical_dataframe
 from physprops.sources.enrich import enrich_hsp_columns, enrich_henry_columns
 from canonical_common.canonical_db import (
     load_or_init_allowlist,

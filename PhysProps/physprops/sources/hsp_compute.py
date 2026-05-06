@@ -33,7 +33,7 @@ COMPUTED_METHOD_ORDER = [
 
 # Pylance friendliness: optional import for type checking only
 if TYPE_CHECKING:
-    from chemicals.solubility import hansen_delta_d, hansen_delta_p, hansen_delta_h  # type: ignore
+    pass  # type: ignore
 
 
 PA05_TO_MPA05 = 1.0 / 1000.0  # Pa^0.5 -> MPa^0.5 (sqrt(Pa) / 1000 == sqrt(MPa))

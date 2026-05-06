@@ -9,8 +9,7 @@ All heuristics are intentionally simple and transparent.
 """
 
 import logging
-from typing import Dict, Any, List, Optional
-import math
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 

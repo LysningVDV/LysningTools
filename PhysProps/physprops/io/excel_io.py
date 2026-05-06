@@ -10,9 +10,6 @@ Responsibilities:
 No chemical logic is implemented here; this module only handles I/O
 and DataFrame structure.
 """
-import os
-import time
-import tempfile
 import logging
 from typing import Optional, List
 import pandas as pd
@@ -22,12 +19,7 @@ from pathlib import Path
 import numpy as np
 from physprops.canonical.schema import CANONICAL_ORDER
 from canonical_common.canonical_db import (
-    load_or_init_allowlist,
-    read_xlsx,
     write_xlsx_atomic,
-    write_xlsx,
-    sanitize_outgoing,
-    upsert_canonical,
 )
 
 logger = logging.getLogger(__name__)
