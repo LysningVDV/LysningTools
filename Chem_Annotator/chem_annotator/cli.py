@@ -117,7 +117,7 @@ def main():
         # --- 1) Load/freeze schema allowlist (stops column growth) ---        
 
         allowlist = load_or_init_allowlist(schema_json_path)
-        print(f"[DEBUG] allowlist_len={len(allowlist)} has_exp_henry={'experimental_henry_constant_mol_m3_pa' in allowlist} has_base_henry={'henry_constant_mol_m3_Pa_25C' in allowlist}")
+        #print(f"[DEBUG] allowlist_len={len(allowlist)} has_exp_henry={'experimental_henry_constant_mol_m3_pa' in allowlist} has_base_henry={'henry_constant_mol_m3_Pa_25C' in allowlist}")
         # --- 2) Sanitize outgoing batch (promote ids, allowlist, dedupe in-batch) ---
         incoming, rejected = sanitize_outgoing(
             out_df,
@@ -125,12 +125,12 @@ def main():
             allowlist=allowlist
         )
 
-        print("incoming shape:", incoming.shape, "rejected shape:", rejected.shape)
-        print("incoming all-zero cols:", int((incoming.drop(columns=['inchi_key'], errors='ignore').fillna(0)==0).all(axis=0).sum()))
+        #print("incoming shape:", incoming.shape, "rejected shape:", rejected.shape)
+        #print("incoming all-zero cols:", int((incoming.drop(columns=['inchi_key'], errors='ignore').fillna(0)==0).all(axis=0).sum()))
 
         # --- 3) Upsert into existing canonical (one row per inchi_key, deterministic) ---
         if incoming is None or incoming.empty:
-            print("[WARNING] Canonical update skipped: no valid rows after sanitization.")
+            #print("[WARNING] Canonical update skipped: no valid rows after sanitization.")
             merged_rows = 0
         else:
             if canonical_db_path.exists() and canonical_db_path.stat().st_size >= 50_000:
