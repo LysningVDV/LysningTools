@@ -27,7 +27,7 @@ invalid_smiles.csv
 *.zip
 *.7z
 *.rar
-*.txt
+python_tools_commands.txt
 
 # --- Python ---
 __pycache__/
