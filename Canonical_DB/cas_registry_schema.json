@@ -1,0 +1,20 @@
+{
+  "allowlist_columns": [
+    "cas_input",
+    "cas_number_normalized",
+    "cas_status",
+    "inchi_key",
+    "inchi",
+    "smiles",
+    "resolver_source",
+    "resolver_confidence",
+    "resolution_timestamp_utc",
+    "evidence",
+    "notes"
+  ],
+  "created_utc": "2026-05-07T18:23:20.321038+00:00",
+  "name": "cas_registry_schema",
+  "notes": "DB2 CAS Registry schema allowlist. DB1 remains authoritative keyed by inchi_key.",
+  "sheet_name": "registry",
+  "version": 1
+}
