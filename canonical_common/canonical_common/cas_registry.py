@@ -15,11 +15,48 @@ import pandas as pd
 # -----------------------------
 # Defaults / schema
 # -----------------------------
-
+# -----------------------------
+# Defaults / schema
+# -----------------------------
+#
+# Mixture classification (resolver) vs DB2 status (governance)
+# -----------------------------------------------------------
+# The resolver produces a detailed categorical label called `mixture_type`
+# via `classify_mixture_enhanced(name, cas, smiles)` (Lysning_CASResolver/util/helpers.py).
+# It always returns one of these strings:
+#
+#   - "single substance"                              (default)
+#   - "unknown"
+#   - "natural product / UVCB"                        (CAS block >= 90000 OR name patterns)
+#   - "fragrance mixture"                             (CAS block 80000-89999 OR name patterns)
+#   - "polymer / complex mixture"                     (CAS block 60000-69999 OR name patterns)
+#   - "mixture (multi-component structure)"           (SMILES contains "." -> multi-component)
+#
+# Governance policy in DB2:
+#   - DB2 must preserve the detailed category label for auditability and filtering.
+#   - DB2 `cas_status` is a coarser, controlled vocabulary used for downstream rules:
+#       valid / invalid / repaired / ambiguous / mixture / uvcb / unresolved
+#
+# Recommended normalization from `mixture_type` -> `cas_status`:
+#   - "natural product / UVCB"            -> cas_status = "uvcb"   (not joinable to DB1)
+#   - "fragrance mixture"                -> cas_status = "mixture" (not joinable to DB1)
+#   - "polymer / complex mixture"        -> cas_status = "mixture" (or "uvcb" if you later prefer)
+#   - "mixture (multi-component structure)" -> cas_status = "mixture"
+#   - "single substance"                 -> do NOT force "mixture"; keep base validity/status
+#   - "unknown"                          -> do NOT force "mixture"; keep base validity/status
+#
+# Important: `mixture_type` is *not* the same as `cas_status`.
+# Treating any non-empty mixture_type as "mixture" will incorrectly label everything as a mixture,
+# because the classifier returns "single substance" by default.
+#
+# Schema note:
+#   - To persist mixture_type in DB2, include it in the allowlist and adapter output.
+#   - If mixture_type is not in the allowlist, it will be dropped by allowlist normalization.
+#
 DEFAULT_DB2_COLUMNS: List[str] = [
     "cas_input",
     "cas_number_normalized",
-    "cas_status",  # valid / invalid / repaired / ambiguous / mixture / uvcb / unresolved
+    "cas_status",  # valid / invalid / repaired / ambiguous / mixture / uvcb / unresolved 
     "inchi_key",
     "inchi",
     "smiles",
@@ -28,6 +65,7 @@ DEFAULT_DB2_COLUMNS: List[str] = [
     "resolution_timestamp_utc",
     "evidence",
     "notes",
+    "mixture_type",  # <-- (recommended) persist detailed classifier label from resolver
 ]
 
 REGISTRY_SHEET = "registry"
@@ -91,6 +129,8 @@ def _clean_df_to_allowlist(df: pd.DataFrame, allowlist: List[str]) -> pd.DataFra
     out["resolution_timestamp_utc"] = out["resolution_timestamp_utc"].map(_coerce_str_or_empty)
     out["evidence"] = out["evidence"].map(_coerce_str_or_empty)
     out["notes"] = out["notes"].map(_coerce_str_or_empty)
+    if "mixture_type" in out.columns:
+        out["mixture_type"] = out["mixture_type"].map(_coerce_str_or_empty)
 
     # Fill missing timestamp if any key fields exist
     mask_has_any = (
@@ -103,6 +143,7 @@ def _clean_df_to_allowlist(df: pd.DataFrame, allowlist: List[str]) -> pd.DataFra
     # Normalize statuses (keep your vocabulary, but enforce known ones when possible)
     known = {"valid", "invalid", "repaired", "ambiguous", "mixture", "uvcb", "unresolved"}
     out.loc[~out["cas_status"].isin(known) & (out["cas_status"] != ""), "cas_status"] = "unresolved"
+
 
     return out
 

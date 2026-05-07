@@ -36,7 +36,7 @@ def main() -> int:
     db2_paths = get_db2_local_paths()
     db2_xlsx = db2_paths["xlsx"]
 
-    print("=== SMOKE: DB2→DB1 CAS VIEW EXPORT ===")
+    print("=== SMOKE: DB2->DB1 CAS VIEW EXPORT ===")
     print(f"Repo root: {repo_root}")
     print(f"DB1 local: {db1_xlsx}")
     print(f"DB2 local: {db2_xlsx}")
@@ -83,10 +83,18 @@ def main() -> int:
     )
 
     print("Export complete:")
-    print(f"  rows: {result['rows']}")
-    print(f"  xlsx: {result['xlsx']}")
-    print(f"  csv:  {result['csv']}")
+    print(f"  rows (full): {result.get('rows')}")
+    print(f"  xlsx (full): {result.get('xlsx')}")
+    print(f"  csv  (full): {result.get('csv')}")
     print()
+
+    # Optional joinable-only outputs (if exporter returns them)
+    if "rows_joinable" in result or "xlsx_joinable" in result or "csv_joinable" in result:
+        print("Joinable export complete:")
+        print(f"  rows (joinable): {result.get('rows_joinable')}")
+        print(f"  xlsx (joinable): {result.get('xlsx_joinable')}")
+        print(f"  csv  (joinable): {result.get('csv_joinable')}")
+        print()
 
     # --- Minimal validation: output exists and is non-trivial ---
     xlsx_path = Path(result["xlsx"])

@@ -40,12 +40,41 @@ def export_cas_view(
     # Only joinable rows will match; mixtures/UVCB stay but won't join
     joined = reg.merge(db1, on="inchi_key", how="left", suffixes=("_registry", ""))
 
+    joined = reg.merge(db1, on="inchi_key", how="left", suffixes=("_registry", ""))
+
+    # Joinable-only view: valid + has InChIKey
+    status_col = "cas_status"
+    joinable_mask = (
+        joined["inchi_key"].astype(str).str.strip().ne("")
+        & joined[status_col].astype(str).str.lower().eq("valid")
+        if status_col in joined.columns else
+        joined["inchi_key"].astype(str).str.strip().ne("")
+    )
+    joined_joinable = joined.loc[joinable_mask].copy()
+
     ts = pd.Timestamp.now("UTC").strftime("%Y%m%d_%H%M%S")
     xlsx_path = out_dir / f"{view_name_prefix}__{ts}.xlsx"
     csv_path = out_dir / f"{view_name_prefix}__{ts}.csv"
 
+    # Additional joinable-only outputs
+    xlsx_joinable_path = out_dir / f"{view_name_prefix}_joinable__{ts}.xlsx"
+    csv_joinable_path = out_dir / f"{view_name_prefix}_joinable__{ts}.csv"
+
+    # Full export
     joined.to_csv(csv_path, index=False, encoding="utf-8")
     with pd.ExcelWriter(xlsx_path, engine="openpyxl") as xlw:
         joined.to_excel(xlw, sheet_name="cas_view", index=False)
 
-    return {"xlsx": xlsx_path, "csv": csv_path, "rows": len(joined)}
+    # Joinable-only export
+    joined_joinable.to_csv(csv_joinable_path, index=False, encoding="utf-8")
+    with pd.ExcelWriter(xlsx_joinable_path, engine="openpyxl") as xlw:
+        joined_joinable.to_excel(xlw, sheet_name="cas_view_joinable", index=False)
+
+    return {
+        "xlsx": xlsx_path,
+        "csv": csv_path,
+        "rows": len(joined),
+        "xlsx_joinable": xlsx_joinable_path,
+        "csv_joinable": csv_joinable_path,
+        "rows_joinable": len(joined_joinable),
+    }

@@ -10,7 +10,8 @@
     "resolver_confidence",
     "resolution_timestamp_utc",
     "evidence",
-    "notes"
+    "notes",
+    "mixture_type"
   ],
   "created_utc": "2026-05-07T18:23:20.321038+00:00",
   "name": "cas_registry_schema",
