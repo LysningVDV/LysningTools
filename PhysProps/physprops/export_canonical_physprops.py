@@ -1,6 +1,9 @@
+import logging
 import pandas as pd
 from physprops.io.excel_io import write_xlsx_atomic
 from physprops.canonical.builder import build_canonical_dataframe
+
+logger = logging.getLogger(__name__)
 
 # Path to your wide output Excel file
 wide_excel_path = "output_cas_results.xlsx"
@@ -23,5 +26,5 @@ write_xlsx_atomic(canonical_df, canonical_excel_path, sheet_name="Sheet1")
 # Save audit log
 write_xlsx_atomic(audit_df, audit_excel_path, sheet_name="Sheet1")
 
-print(f"Canonical physprops table written to: {canonical_excel_path}")
-print(f"Audit log written to: {audit_excel_path}")
+logger.info("Canonical physprops table written to: %s", canonical_excel_path)
+logger.info("Audit log written to: %s", audit_excel_path)

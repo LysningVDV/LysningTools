@@ -24,6 +24,7 @@ from rdkit import Chem
 from physprops.util.identify import normalize_identifier, detect_identifier_type
 from physprops.util.normalize import clean_whitespace, normalize_cas
 from physprops.sources.pubchem import get_pubchem_properties
+from physprops.sources import pubchem as pubchem_mod
 from physprops.compute.rdkit import compute_rdkit_descriptors
 from physprops.sources.fallbacks import apply_fallbacks
 from physprops.io.excel_io import (
@@ -497,13 +498,16 @@ def cli():
     # Load & process (single pass)
     # ----------------------------------------------------
     df = load_excel(args.input_excel, sheet_name=sheet)
+    df = df.copy()
+    df["_row_id"] = range(len(df))
 
     t1 = time.time()
     logger.info("Timing: load_excel %.2fs", t1 - t0)
 
     # Expect resolve_dataframe to support return_wide=True
+    pubchem_mod._CACHE_STATS = {k: 0 for k in pubchem_mod._CACHE_STATS}  # reset stats before processing
     out_legacy, out_wide = resolve_dataframe(df, return_wide=True)
-
+    logger.info("PubChem cache stats: %s", pubchem_mod._CACHE_STATS)
     t2 = time.time()
     logger.info("Timing: resolve_dataframe %.2fs", t2 - t1)
 

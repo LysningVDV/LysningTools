@@ -13,10 +13,10 @@ descriptors. All outputs follow the FLAT naming convention:
 No experimental values are handled here.
 """
 
-import logging
+import logging, re
 from typing import Dict, Any
 
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 from rdkit.Chem import (
     Descriptors, Crippen, rdMolDescriptors, Lipinski
 )
@@ -24,7 +24,7 @@ from rdkit.Chem import (
 from physprops.util.normalize import normalize_smiles, normalize_inchi
 
 logger = logging.getLogger(__name__)
-
+#RDLogger.DisableLog("rdApp.error")
 
 # ------------------------------------------------------------
 # Identifier → mol
@@ -107,6 +107,29 @@ def compute_rdkit_descriptors(identifier: str, id_type: str) -> Dict[str, Any]:
 
         "warnings": []
     }
+
+    
+
+    #quick reject patterns (avoid RDKit spam)
+    _CAS_LIKE = re.compile(r"^\d{1,7}-\d{2}-\d$")
+    _ISO_TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+
+    s = (identifier or "").strip()
+    if not s:
+        return result
+
+    # Only attempt RDKit parsing if we believe this is SMILES (or explicit inchi)
+    if id_type not in {"smiles", "inchi"}:
+        return result
+
+    low = s.lower()
+    if low in {"nan", "none", "null", "rdkit", "pubchem", "cactus"}:
+        return result
+
+    # Don’t parse CAS strings or timestamps as SMILES
+    if _CAS_LIKE.match(s) or _ISO_TS.match(s):
+        return result
+
 
     mol = _identifier_to_mol(identifier, id_type)
     if mol is None:

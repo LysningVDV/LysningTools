@@ -20,12 +20,37 @@ Solubility normalized to mg/L.
 No computed or fallback values are handled here.
 """
 
-import logging
-import time
-import re
+import time, os, re, logging, requests
 from typing import Optional, Dict, Any, List, Callable
+from urllib.parse import quote
+from pathlib import Path
+from .resolver_cache import ResolverCache
+from physprops.sources import pubchem as pubchem_mod
 
-import requests
+_CACHE_STATS = {
+    "hit_success": 0,
+    "hit_negative": 0,
+    "hit_temp": 0,
+    "miss": 0,
+    "net_success": 0,
+    "net_400": 0,
+    "net_404": 0,
+    "net_temp": 0,
+}
+
+def _cache_path():
+    root = os.environ.get("CANONICAL_DB_LOCAL_ROOT")
+    if root:
+        return Path(root) / "cache" / "resolver_cache.sqlite"
+    return Path.home() / "AppData" / "Local" / "Lysning" / "Canonical_DB" / "cache" / "resolver_cache.sqlite"
+
+_CACHE = ResolverCache(_cache_path())
+
+TTL_NEG = 30 * 24 * 3600   # 30 days for 400/404
+TTL_TEMP = 60 * 60         # 1 hour for 503/timeouts
+
+SESSION = requests.Session()
+
 
 logger = logging.getLogger(__name__)
 
@@ -386,19 +411,78 @@ def _extract_temperature_qualifier(raw_text) -> Optional[float]:
 # CID resolution
 # ------------------------------------------------------------
 
+
+
+
 def resolve_to_cid(identifier: str, id_type: str, retries: int = 3, delay: float = 0.8) -> Optional[int]:
     """
-    Resolve any identifier to a PubChem CID.
+    Resolve any identifier to a PubChem CID, with local SQLite caching.
     """
     if not identifier:
         return None
 
+    key_value = str(identifier).strip()
+    if not key_value:
+        return None
+    
+    if id_type == "inchikey":
+        key_value = key_value.upper()
+
+    
+    if id_type == "cas":
+        key_value = key_value.replace(" ", "")
+
+
+    # quick garbage filter (helps a lot)
+    lower = key_value.lower()
+    if lower in {"nan", "none", "null", "rdkit", "pubchem", "cactus"}:
+        return None
+
+    # Cache check (per-item at DEBUG; summary via _CACHE_STATS)
+    cached = _CACHE.get("pubchem", id_type, key_value)
+    if cached:
+        status, result, http_status, updated_utc = cached
+        age = int(time.time()) - int(updated_utc)
+
+        logger.debug(
+            "PubChem CID cache hit: type=%s key=%r status=%s result=%r http=%s age_s=%d",
+            id_type, key_value, status, result, http_status, age
+        )
+
+        # 1) Cached success (always valid)
+        if status == "success" and result:
+            _CACHE_STATS["hit_success"] += 1
+            try:
+                return int(result)
+            except Exception:
+                # malformed cached CID: treat as miss and fall through
+                pass
+
+        # 2) Cached negative (skip network within TTL_NEG)
+        if status in ("not_found", "bad_request") and age < TTL_NEG:
+            _CACHE_STATS["hit_negative"] += 1
+            return None
+
+        # 3) Cached temporary error (skip network within TTL_TEMP)
+        if status == "temp_error" and age < TTL_TEMP:
+            _CACHE_STATS["hit_temp"] += 1
+            return None
+
+        # Otherwise: cache entry is expired (or malformed) → treat as miss and continue to network
+        _CACHE_STATS["miss"] += 1
+
+    else:
+        logger.debug("PubChem CID cache miss: type=%s key=%r", id_type, key_value)
+        _CACHE_STATS["miss"] += 1
+
+    # Build endpoint using URL-encoded key_value
+    encoded = quote(key_value, safe="")
     mapping = {
-        "cas":       f"compound/name/{identifier}/cids/JSON",
-        "name":      f"compound/name/{identifier}/cids/JSON",
-        "smiles":    f"compound/smiles/{identifier}/cids/JSON",
-        "inchi":     f"compound/inchi/{identifier}/cids/JSON",
-        "inchikey":  f"compound/inchikey/{identifier}/cids/JSON",
+        "cas":      f"compound/name/{encoded}/cids/JSON",
+        "name":     f"compound/name/{encoded}/cids/JSON",
+        "smiles":   f"compound/smiles/{encoded}/cids/JSON",
+        "inchi":    f"compound/inchi/{encoded}/cids/JSON",
+        "inchikey": f"compound/inchikey/{encoded}/cids/JSON",
     }
 
     endpoint = mapping.get(id_type)
@@ -407,25 +491,60 @@ def resolve_to_cid(identifier: str, id_type: str, retries: int = 3, delay: float
         return None
 
     url = f"{PUBCHEM_BASE}/{endpoint}"
+    last_status = None
 
     for attempt in range(1, retries + 1):
         try:
-            r = requests.get(url, timeout=10)
+            r = SESSION.get(url, timeout=10)
+            last_status = r.status_code
+
             if r.status_code == 200:
                 data = r.json()
                 cids = data.get("IdentifierList", {}).get("CID")
                 if cids:
-                    return int(cids[0])
+                    cid = int(cids[0])
+                    _CACHE.put("pubchem", id_type, key_value, "success", result=str(cid), http_status=200)
+                    _CACHE_STATS["net_success"] += 1
+                    logger.debug("PubChem CID resolved: type=%s key=%r cid=%s", id_type, key_value, cid)
+                    return cid
+
+                # 200 but no CID → treat as not_found-ish and cache (prevents repeated calls)
+                _CACHE.put("pubchem", id_type, key_value, "not_found", result=None, http_status=200)
+                _CACHE_STATS["net_404"] += 1  # treat like not-found for stats purposes
+                logger.debug("PubChem CID 200-but-empty: type=%s key=%r", id_type, key_value)
                 return None
 
-            logger.warning("PubChem CID request failed (%s), attempt %s", r.status_code, attempt)
+            # Negative cache on 404/400 (do not retry)
+            if r.status_code == 404:
+                _CACHE.put("pubchem", id_type, key_value, "not_found", result=None, http_status=404)
+                _CACHE_STATS["net_404"] += 1
+                logger.debug("PubChem CID not found (404): type=%s key=%r", id_type, key_value)
+                return None
+
+            if r.status_code == 400:
+                _CACHE.put("pubchem", id_type, key_value, "bad_request", result=None, http_status=400)
+                _CACHE_STATS["net_400"] += 1
+                logger.debug("PubChem CID bad request (400): type=%s key=%r", id_type, key_value)
+                return None
+
+            # Temporary-ish server side failures: retry
+            if r.status_code >= 500:
+                _CACHE_STATS["net_temp"] += 1
+
+            logger.debug("PubChem CID request failed (%s), attempt %s", r.status_code, attempt)
+
         except Exception as e:
+            # timeouts / connection aborted etc. → treat as temporary
+            _CACHE_STATS["net_temp"] += 1
             logger.warning("CID resolution error: %s, attempt %s", e, attempt)
+            last_status = 503  # classify for caching below
 
         time.sleep(delay)
 
+    # If we exhausted retries, cache as temp_error to avoid hammering PubChem repeatedly
+    _CACHE.put("pubchem", id_type, key_value, "temp_error", result=None, http_status=last_status)
+    logger.debug("PubChem CID temp_error cached: type=%s key=%r last_http=%s", id_type, key_value, last_status)
     return None
-
 
 # ------------------------------------------------------------
 # PubChem record fetch + extraction helpers
