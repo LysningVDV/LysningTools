@@ -1,8 +1,12 @@
 import re
 
-# Split on: backslash, forward slash, semicolon, comma, CR, LF
-SPLIT_REGEX = re.compile(r"[\\/;,\r\n ]+")
-CAS_REGEX = re.compile(r"^\d{2,7}-\d{2}-\d$")
+# Split on: backslash, forward slash, semicolon, comma, CR, LF, TAB, SPACE
+# NOTE: deliberately NOT splitting on '|' (pipe), because property-based tests expect '|' preserved as token.
+SPLIT_REGEX = re.compile(r"[\\/;,\r\n\t ]+")
+
+# Allow 1..7 digits in the first block (tests include 0-00-0)
+CAS_REGEX = re.compile(r"^\d{1,7}-\d{2}-\d$")
+
 
 # YYYY-MM-DD optionally followed by time
 YMD_TIME_REGEX = re.compile(r"^(\d{2,7})-(\d{2})-(\d{2})(?:\s+\d{2}:\d{2}:\d{2})?$")
