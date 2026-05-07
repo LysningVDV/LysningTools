@@ -10,6 +10,10 @@ from .constants import (
     ADJ_DIGITS,
 )
 
+# Non-anchored CAS pattern for embedding in larger text (strip ^ and $)
+_CAS_RE_INNER = CAS_REGEX.pattern.strip("^$")
+
+
 def compact_ws(s: str) -> str:
     """Collapse whitespace to single spaces and strip."""
     return re.sub(r"\s+", " ", str(s)).strip()
@@ -19,8 +23,18 @@ def is_all_zero_cas_like(token: str) -> bool:
     digits = re.sub(r"[^0-9]", "", str(token))
     return bool(digits) and set(digits) == {"0"}
 
+
 def split_cas_cell(val) -> list:
-    """Split CAS cell into tokens, preserving order."""
+    """Split CAS cell into tokens, preserving order.
+
+    Policy:
+    - Split on /, \\, ;, comma, whitespace (space/tab), and newlines (per SPLIT_REGEX).
+    - Do NOT split on '|' (pipe is treated as content, per property-based test).
+    - NBSP (\u00a0) is NOT a delimiter by default.
+      BUT: if NBSP appears between two CAS-like patterns, treat it as a delimiter
+      by converting it to a normal space.
+    - Preserve Excel date/timestamp coercion fix (return YYYY-MM-DD).
+    """
     if val is None:
         return []
     try:
@@ -29,6 +43,7 @@ def split_cas_cell(val) -> list:
     except Exception:
         pass
 
+    # Preserve prior behavior for date-like values (Excel coercion fix)
     if isinstance(val, (pd.Timestamp, dt.datetime, dt.date)):
         if isinstance(val, pd.Timestamp):
             val = val.to_pydatetime()
@@ -36,11 +51,17 @@ def split_cas_cell(val) -> list:
             val = val.date()
         return [val.strftime("%Y-%m-%d")]
 
-    s = compact_ws(str(val).replace("\u00a0", " "))
-    if not s:
+    s = str(val)
+    if not s.strip():
         return []
+
+    # Only convert NBSP to space when it separates two CAS numbers: CAS\u00a0CAS
+    s = re.sub(rf"({_CAS_RE_INNER})\u00a0({_CAS_RE_INNER})", r"\1 \2", s)
+
     parts = SPLIT_REGEX.split(s)
     return [p.strip() for p in parts if p and p.strip()]
+
+
 
 def is_valid_cas(cas: str) -> bool:
     """Strict CAS regex + checksum; reject all-zero placeholder."""
