@@ -3,6 +3,7 @@ import logging
 import os
 from datetime import datetime
 from logging.handlers import MemoryHandler
+from pathlib import Path
 
 import pandas as pd
 from tqdm import tqdm
@@ -12,14 +13,82 @@ from .resolution.cas_lookup import resolve_cas
 from .resolution.name.resolver import resolve_name
 from .resolution.opsin_lookup import resolve_opsin_cas
 from .util.helpers import classify_mixture_enhanced, inchi_to_smiles
+from .util.validate import validate_cas
 
-# Fix validate_cas import
-try:
-    from ..util.validate import validate_cas
-except ImportError:
-    from .util.validate import validate_cas
+from canonical_common.cas_registry import (
+    load_or_init_allowlist,
+    read_registry_excel,
+    upsert_registry,
+    write_registry_excel_atomic,
+    export_registry_csv,
+    export_registry_sqlite,
+    write_audit_workbook_atomic,
+    backup_registry_to_onedrive,
+    get_db2_local_paths,
+)
+from canonical_common.cas_registry_adapters import incoming_from_resolver
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------
+#HOOK USAGE for DB2 registry update :
+# ---------------------------------------------------------------------
+
+def _repo_root_from_this_file() -> Path:
+    """
+    This file is: .../Tools/Lysning_CASResolver/lysning_casresolver/main.py
+    parents[2] -> .../Tools
+    """
+    return Path(__file__).resolve().parents[2]
+
+
+def _update_db2_registry_from_resolver_df(df_output: pd.DataFrame) -> None:
+    if df_output is None or len(df_output) == 0:
+        return
+
+    repo_root = _repo_root_from_this_file()
+    governance_root = repo_root / "Canonical_DB"
+
+    schema_path = governance_root / "cas_registry_schema.json"
+    audit_path  = governance_root / "cas_registry_audit.xlsx"
+    backups_dir = governance_root / "backups_registry"
+
+    allowlist = load_or_init_allowlist(schema_path)
+    paths = get_db2_local_paths()
+
+
+
+    existing = read_registry_excel(paths["xlsx"], allowlist)
+
+    # Adapt resolver-native columns -> DB2 schema columns
+    incoming = incoming_from_resolver(df_output)
+    
+    # Always-on guard: if everything becomes mixture, adapter logic is likely wrong.
+    # Allow it only if you truly expect a 100% mixture batch (rare).
+    if incoming["cas_status"].astype(str).str.lower().eq("mixture").all():
+        logger.warning(
+            "DB2 adapter produced cas_status='mixture' for all %d rows. "
+            "This is likely a mixture_type mapping bug. Proceeding anyway.",
+            len(incoming),
+        )
+
+
+    # Optional: guard against adapter mismatch causing all rows to be rejected
+    if incoming["cas_number_normalized"].astype(str).str.strip().eq("").all():
+        logger.warning("DB2 registry update skipped: incoming has empty cas_number_normalized for all rows (adapter mismatch).")
+        return
+
+    result = upsert_registry(existing, incoming, allowlist)
+
+    # Write local DB2 + exports
+    write_registry_excel_atomic(paths["xlsx"], result.updated_registry)
+    export_registry_csv(result.updated_registry, paths["csv"])
+    export_registry_sqlite(result.updated_registry, paths["sqlite"])
+
+    # Governance audit + backup
+    write_audit_workbook_atomic(audit_path, result.audit, result.rejected)
+    backup_registry_to_onedrive(paths["xlsx"], backups_dir)
+
 
 
 # ---------------------------------------------------------------------
@@ -385,6 +454,10 @@ def main():
 
     df_input = read_input_excel(args.input)
     df_output, summary = resolve_dataframe(df_input)
+
+    logger.info("DB2 registry update: starting (rows=%d)", len(df_output))
+    _update_db2_registry_from_resolver_df(df_output)
+    logger.info("DB2 registry update: done")
 
     write_output_excel(df_output, args.output)
 
