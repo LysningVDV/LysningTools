@@ -12,6 +12,7 @@ Implements:
 Priority Order B for identifiers:
     SMILES > InChI > InChIKey > CAS > Name
 """
+import time
 import argparse
 import logging
 import shutil
@@ -38,8 +39,10 @@ from canonical_common.canonical_db import (
     write_xlsx_atomic,
     sanitize_outgoing,
     upsert_canonical,
-)
+    _collapse_duplicate_columns_positional,
+    _ensure_unique_cols
 
+)
 logger = logging.getLogger(__name__)
 
 ONEDRIVE_CANONICAL_ROOT = Path(r"C:\Users\vdevi\OneDrive - Lysning Innovation Consultants B.V\Lysning\Tools\Canonical_DB")
@@ -396,6 +399,7 @@ def resolve_dataframe(df: pd.DataFrame, return_wide: bool = False):
     return legacy_df, wide_df
 
 def cli():
+    t0 = time.time()
     parser = argparse.ArgumentParser(description="Physical Properties Retrieval App")
     parser.add_argument("input_excel", help="Path to input Excel file")
     parser.add_argument("output_excel", help="Path to save output Excel file")
@@ -494,8 +498,14 @@ def cli():
     # ----------------------------------------------------
     df = load_excel(args.input_excel, sheet_name=sheet)
 
+    t1 = time.time()
+    logger.info("Timing: load_excel %.2fs", t1 - t0)
+
     # Expect resolve_dataframe to support return_wide=True
     out_legacy, out_wide = resolve_dataframe(df, return_wide=True)
+
+    t2 = time.time()
+    logger.info("Timing: resolve_dataframe %.2fs", t2 - t1)
 
     # ----------------------------------------------------
     # Ensure out_wide has canonical merge key: inchi_key
@@ -539,28 +549,64 @@ def cli():
 
         return df_wide
 
-
-
     out_wide = _ensure_inchi_key(out_wide, out_legacy)
-    out_wide = enrich_hsp_columns(out_wide)
+    # Ensure unique column labels before any dedupe/merge/concat steps
+    out_wide.columns = [str(c).strip() for c in out_wide.columns]
+    out_wide = _collapse_duplicate_columns_positional(out_wide)
 
-    # Run Henry enrichment FIRST
+    # Preserve original order
+    out_wide = out_wide.copy()
+    out_wide["_row_id"] = range(len(out_wide))
+
+    KEY = "inchi_key"
+    mask_has_key = out_wide[KEY].notna() & (out_wide[KEY].astype(str).str.strip() != "")
+    wide_no_key = out_wide.loc[~mask_has_key].copy()
+    wide_keyed = out_wide.loc[mask_has_key].copy()
+
+    wide_unique = wide_keyed.drop_duplicates(subset=[KEY], keep="first").copy()
+
+    logger.info(
+        "Stage1: %d rows total, %d rows with inchi_key, %d unique inchi_key",
+        len(out_wide), len(wide_keyed), len(wide_unique)
+    )
+
+    # ✅ Enrich only the unique inchi_key rows (expensive part)
+    wide_unique = enrich_hsp_columns(wide_unique)
     try:
-        out_wide = enrich_henry_columns(out_wide)
+        wide_unique = enrich_henry_columns(wide_unique)
     except Exception as e:
         logger.warning(f"Henry enrichment skipped due to error: {e}")
 
-    logger.info("[DEBUG] out_wide Henry nonnull: %s", {c: int(out_wide[c].notna().sum()) for c in ["henry_constant_mol_m3_Pa_25C","source_henry_constant"] if c in out_wide.columns})
+    logger.info(
+        "[DEBUG] wide_unique Henry nonnull: %s",
+        {c: int(wide_unique[c].notna().sum())
+        for c in ["henry_constant_mol_m3_Pa_25C", "source_henry_constant"]
+        if c in wide_unique.columns}
+    )
 
-    # THEN ensure experimental alias is filled from computed Henry if present
-    if "henry_constant_mol_m3_Pa_25C" in out_wide.columns:
-        if "experimental_henry_constant_mol_m3_pa" not in out_wide.columns:
-            out_wide["experimental_henry_constant_mol_m3_pa"] = pd.NA
-        out_wide["experimental_henry_constant_mol_m3_pa"] = (
-            out_wide["experimental_henry_constant_mol_m3_pa"]
-            .fillna(out_wide["henry_constant_mol_m3_Pa_25C"])
-        )
+    # ✅ Merge only enrichment columns back (cheap merge)
+    HSP_HENRY_COLS = [
+        "experimental_hsp_delta_d_mpa05", "experimental_hsp_delta_p_mpa05", "experimental_hsp_delta_h_mpa05",
+        "source_hsp",
+        "computed_hsp_delta_d_mpa05", "computed_hsp_delta_p_mpa05", "computed_hsp_delta_h_mpa05",
+        "source_hsp_computed",
+        "henry_constant_mol_m3_Pa_25C", "log_henry_constant_mol_m3_Pa_25C", "source_henry_constant",
+    ]
+    cols_to_merge = [c for c in HSP_HENRY_COLS if c in wide_unique.columns]
+    wide_keyed = wide_keyed.merge(wide_unique[[KEY] + cols_to_merge], on=KEY, how="left")
 
+    # Reconstruct full out_wide and restore original order    
+    wide_keyed = _collapse_duplicate_columns_positional(wide_keyed)
+    wide_no_key = _collapse_duplicate_columns_positional(wide_no_key)
+   
+    wide_keyed = _ensure_unique_cols(wide_keyed)
+    wide_no_key = _ensure_unique_cols(wide_no_key)
+
+    out_wide = pd.concat([wide_keyed, wide_no_key], axis=0, ignore_index=True, sort=False)
+    out_wide = out_wide.sort_values("_row_id", kind="mergesort").drop(columns=["_row_id"])
+
+    t3 = time.time()
+    logger.info("Timing: enrich_hsp+henry (dedup) %.2fs", t3 - t2)
 
     # ----------------------------------------------------
     # 1) Write non-legacy WIDE export (timestamped, do not overwrite)
@@ -731,3 +777,7 @@ def cli():
     dbp = Path(canonical_db_path)
     if dbp.exists():
         logger.info(f"Canonical DB size: {dbp.stat().st_size} bytes")
+
+    t4 = time.time()
+    logger.info("Timing: rest (exports/canonical) %.2fs", t4 - t3)
+    logger.info("Timing: total %.2fs", t4 - t0)

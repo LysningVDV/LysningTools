@@ -86,52 +86,6 @@ RENAME_SYNONYMS = {
     "experimental_henry_constant_mol_m3_pa": "henry_constant_mol_m3_Pa_25C",
 }
 
-def _make_unique_columns(cols):
-    """Return a list of unique column names by suffixing duplicates: a, a__2, a__3, ..."""
-    seen = {}
-    out = []
-    for c in cols:
-        c0 = str(c)
-        n = seen.get(c0, 0) + 1
-        seen[c0] = n
-        out.append(c0 if n == 1 else f"{c0}__{n}")
-    return out
-
-
-def _collapse_duplicate_columns(df):
-    """
-    If df has duplicate column names, collapse them into a single column by taking the
-    first non-null value per row (left-to-right), then drop duplicates.
-    """
-    import pandas as pd
-
-    if df.columns.is_unique:
-        return df
-
-    # For each duplicated name, combine left-to-right
-    new_cols = []
-    out = df.copy()
-
-    for name in pd.Index(out.columns).unique():
-        cols = [c for c in out.columns if c == name]
-        if len(cols) == 1:
-            new_cols.append(name)
-            continue
-
-        # Start from first, fillna from subsequent
-        s = out[cols[0]]
-        for c in cols[1:]:
-            s = s.fillna(out[c])
-        out[name] = s
-        # Drop the extra duplicates
-        for c in cols[1:]:
-            out = out.drop(columns=c)
-
-        new_cols.append(name)
-
-    # Ensure still unique
-    out.columns = pd.Index(out.columns)
-    return out
 
 def _apply_schema_normalization(cols: Sequence[str]) -> List[str]:
     """
@@ -432,8 +386,19 @@ def dedupe_by_inchikey(df: pd.DataFrame) -> pd.DataFrame:
 
    
 
-    # ---- Fix: ensure unique column labels (prevents InvalidIndexError downstream) ----
-    # If you prefer "drop duplicates" instead of collapse, tell me; collapse is safer.
+
+def _ensure_unique_cols(df: pd.DataFrame) -> pd.DataFrame:
+    # normalize column labels first (strip whitespace / hidden differences)
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    # collapse duplicates deterministically (first non-null wins)
+    df = _collapse_duplicate_columns_positional(df)
+    # safety assert (optional)
+    if not df.columns.is_unique:
+        dups = df.columns[df.columns.duplicated()].tolist()
+        raise RuntimeError(f"Still have duplicate columns after collapse: {dups[:20]}")
+    return df
+
 
 
 # ----------------------------
