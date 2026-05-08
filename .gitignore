@@ -65,3 +65,22 @@ Chem_Annotator/chem_annotator/canonical_schema.json
 output/
 Tools/output/pipeline_inputs/
 pipeline_inputs/
+
+# ----------------------------------------------------
+# Customer / pipeline input files (DO NOT COMMIT)
+# ----------------------------------------------------
+pipeline_inputs/
+pipeline_inputs/**
+
+# ----------------------------------------------------
+# Standardized tool outputs (generated run artifacts)
+# ----------------------------------------------------
+output/
+output/**
+
+# ----------------------------------------------------
+# Pipeline export scratch space (generated intermediates)
+# Keep scripts & schemas tracked; ignore generated exports.
+# ----------------------------------------------------
+Canonical_DB/exports_pipeline/
+Canonical_DB/exports_pipeline/**
