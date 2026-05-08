@@ -60,3 +60,7 @@ PhysProps/50_000
 
 # Duplicate schema copies (keep only Canonical_DB/canonical_schema.json)
 Chem_Annotator/chem_annotator/canonical_schema.json
+
+# Tool run outputs
+output/
+Tools/output/

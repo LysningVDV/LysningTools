@@ -13,12 +13,15 @@ Priority Order B for identifiers:
     SMILES > InChI > InChIKey > CAS > Name
 """
 import time
+import json
 import argparse
 import logging
 import shutil
+import os
 from pathlib import Path
 from typing import Dict, Any, List
-
+from pathlib import Path
+from datetime import datetime
 import pandas as pd
 from rdkit import Chem
 from physprops.util.identify import normalize_identifier, detect_identifier_type
@@ -34,6 +37,7 @@ from physprops.io.excel_io import (
     export_physprops_wide,
 )
 from physprops.sources.enrich import enrich_hsp_columns, enrich_henry_columns
+from physprops.util.run_artifacts import utc_stamp, build_physprops_paths
 from canonical_common.canonical_db import (
     load_or_init_allowlist,
     read_xlsx,
@@ -423,14 +427,14 @@ def cli():
 
     args = parser.parse_args()
 
+    # Standardized run artifact paths (Tools/output/physprops/...)
+    run_stamp = utc_stamp()
+    std_paths = build_physprops_paths(run_stamp, start=Path(__file__).resolve())
+
     logging.basicConfig(
         level=getattr(logging, args.log.upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
-
-    import os
-    from pathlib import Path
-    from datetime import datetime
 
     # ----------------------------------------------------
     # Prevent system sleep (Windows)
@@ -498,7 +502,15 @@ def cli():
     # ----------------------------------------------------
     # Compute timestamped legacy output path (do not overwrite)
     # ----------------------------------------------------
-    final_output_path = safe_output_path(timestamped_output_path(args.output_excel))
+
+    # Legacy export: keep backward compatibility.
+    # - If user provides an explicit output path, keep it.
+    # - Otherwise, default to Tools/output/physprops/legacy_physprops_<UTCSTAMP>.xlsx
+    if getattr(args, "output_excel", None):
+        final_output_path = Path(args.output_excel)
+    else:
+        final_output_path = std_paths["legacy_default"]
+
 
     # Root folder for all “product” outputs
     root_dir = Path(final_output_path).resolve().parent
@@ -632,28 +644,31 @@ def cli():
     # ----------------------------------------------------
     # 1) Write non-legacy WIDE export (timestamped, do not overwrite)
     # ----------------------------------------------------
-    wide_export_base = str(root_dir / "physprops_export_wide.xlsx")
-    wide_export_path = safe_output_path(timestamped_output_path(wide_export_base))
+
+    # Standardized run output path (Tools/output/physprops/wide_physprops_<UTCSTAMP>.xlsx)
+    wide_export_path = safe_output_path(str(std_paths["wide"]))
 
     # Ensure sheet_name is defined (wide export reads a file; sheet_name can be None or 0)
-    # If you don't support sheet selection, set it explicitly:
-    sheet_name = None  # or 0, if you want first sheet always
-    logger.info("HSP/HENRY cols in out_wide: %s", [c for c in out_wide.columns if ('henry' in c.lower() or 'hsp' in c.lower())])
+    sheet_name = None  # or 0 if you want "first sheet always"
+
+    logger.info(
+        "HSP/HENRY cols in out_wide: %s",
+        [c for c in out_wide.columns if ("henry" in c.lower() or "hsp" in c.lower())],
+    )
+
     # Export MUST be based on out_wide (it contains Henry + HSP), so write a temp source file
-    tmp_wide_source = safe_output_path(timestamped_output_path(str(root_dir / "_tmp_out_wide_source.xlsx")))
+    tmp_wide_source = safe_output_path(str(std_paths["temp_out_wide_source"]))
     save_excel(out_wide, tmp_wide_source)
 
     export_physprops_wide(tmp_wide_source, wide_export_path, sheet_name=sheet_name)
-    logger.info(f"Saved non-legacy wide Excel file: {wide_export_path}")
-
+    logger.info("Saved non-legacy wide Excel file: %s", wide_export_path)
 
     # ----------------------------------------------------
     # 2) Write LEGACY export (timestamped CLI output)
     # ----------------------------------------------------
     save_excel(out_legacy, final_output_path)
-    logger.info(f"Saved legacy Excel file: {final_output_path}")
-    # ----------------------------------------------------
-    wide_export_base = str(root_dir / "physprops_export_wide.xlsx")
+    logger.info("Saved legacy Excel file: %s", final_output_path)
+
 
 
     # ----------------------------------------------------
@@ -798,6 +813,35 @@ def cli():
     dbp = Path(canonical_db_path)
     if dbp.exists():
         logger.info(f"Canonical DB size: {dbp.stat().st_size} bytes")
+
+
+    # Single manifest line: list all produced artifacts and their roles.
+    # Canonical DB locations are NOT changed; we only report what was used/produced.
+    manifest = {
+        "tool": "physprops",
+        "run_stamp_utc": run_stamp,
+        "input_file": str(Path(args.input_excel).resolve()),
+        "run_outputs": {
+            "wide_governed": str(Path(wide_export_path).resolve()),
+            "legacy": str(Path(final_output_path).resolve()),
+            "temp_out_wide_source": str(Path(tmp_wide_source).resolve()),
+        },
+        "canonical": {
+            "canonical_root": str(Path(canonical_root).resolve()),
+            "canonical_db_path": str(Path(canonical_db_path).resolve()),
+            "canonical_audit_path": str(Path(canonical_audit_path).resolve()),
+            "schema_json_path": str(Path(schema_json_path).resolve()) if "schema_json_path" in locals() else None,
+            "rejected_path": str(Path(rejected_path).resolve()) if "rejected_path" in locals() else None,
+            "backup_path": str(Path(backup_path).resolve()) if "backup_path" in locals() else None,
+        },
+        "verification": {
+            "canonical_db_exists": bool(db_exists),
+            "canonical_audit_exists": bool(audit_exists),
+        },
+    }
+
+    # One single line, JSON, stable keys for easy grep/parsing
+    logger.info("PhysProps manifest: %s", json.dumps(manifest, sort_keys=True))
 
     t4 = time.time()
     logger.info("Timing: rest (exports/canonical) %.2fs", t4 - t3)
