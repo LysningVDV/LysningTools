@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import argparse
 import os
 from pathlib import Path
 
@@ -21,10 +21,16 @@ def _repo_root_from_this_file() -> Path:
 
 def main() -> int:
     repo_root = _repo_root_from_this_file()
+    ap = argparse.ArgumentParser(description="SMOKE: DB2->DB1 CAS view export")
+    ap.add_argument("--customer-id", default=None, help="Customer ID for per-customer CAS view export (e.g., MANE)")
+    args = ap.parse_args()
 
     # --- Paths (governance + local) ---
     schema_json = repo_root / "Canonical_DB" / "cas_registry_schema.json"
-    out_dir = repo_root / "Canonical_DB" / "exports_cas_view"
+    out_dir = repo_root / "output" / "Canonical_DB" / "exports_cas_view"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+
 
     # DB1 local truth store
     local_root = os.environ.get("CANONICAL_DB_LOCAL_ROOT", "").strip()
@@ -80,6 +86,7 @@ def main() -> int:
         db2_schema_json=schema_json,
         out_dir=out_dir,
         view_name_prefix="cas_view",
+        customer_id=args.customer_id,
     )
 
     print("Export complete:")

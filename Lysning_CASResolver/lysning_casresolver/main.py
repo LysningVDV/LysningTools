@@ -1,9 +1,11 @@
 import argparse
+from email import parser
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, UTC
 from logging.handlers import MemoryHandler
 from pathlib import Path
+import json
 
 import pandas as pd
 from tqdm import tqdm
@@ -98,17 +100,12 @@ def _update_db2_registry_from_resolver_df(df_output: pd.DataFrame) -> None:
 DEFAULT_OUTPUT_DIR = "output"
 
 def ensure_output_folder(path: str) -> str:
+    
+    if path is None:
+        return None
     folder = os.path.dirname(path)
-    if not folder:
-        folder = DEFAULT_OUTPUT_DIR
-        if not os.path.exists(folder):
-            os.makedirs(folder)
-        filename = os.path.basename(path)
-        return os.path.join(folder, filename)
-
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-
+    if folder and not os.path.exists(folder):
+        os.makedirs(folder, exist_ok=True)
     return path
 
 
@@ -201,7 +198,7 @@ def _empty_failure_row(raw_value, reason):
         "warning": reason,
         "mixture_type": "unknown",
         "cas_validity": "",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
 
 
@@ -424,6 +421,20 @@ def resolve_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return pd.DataFrame(output_rows), summary
 
 
+def _find_tools_root(start: Path) -> Path:
+    """
+    Walk upward until we find the Tools repo root (identified by Canonical_DB folder).
+    """
+    p = start.resolve()
+    for parent in [p, *p.parents]:
+        if (parent / "Canonical_DB").exists():
+            return parent
+    return p
+
+def _utc_stamp() -> str:
+    # Collision-proof UTC stamp
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+
 # ---------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------
@@ -431,19 +442,43 @@ def resolve_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 def main():
 
     parser = argparse.ArgumentParser(description="Lysning CAS → SMILES Resolver")
-    parser.add_argument("input")
-    parser.add_argument("output")
+    parser.add_argument("input", help="Path to input Excel file")
+    parser.add_argument(
+        "output",
+        nargs="?",
+        default=None,
+        help="Optional output path. If omitted, output is written under Tools/output/CASResolver/.",
+    )
+
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--force", action="store_true")
 
     args = parser.parse_args()
+
+    tools_root = _find_tools_root(Path(__file__).resolve())
+    default_outdir = tools_root / "output" / "CASResolver"
+    default_outdir.mkdir(parents=True, exist_ok=True)
+
+    run_stamp = _utc_stamp()
+    
+    if args.output is None:
+        args.output = str(default_outdir / f"casresolver_output_{run_stamp}.xlsx")
+
+    if args.output:
+        output_path = Path(args.output).resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        output_path = default_outdir / f"casresolver_output_{run_stamp}.xlsx"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
 
-    args.output = ensure_output_folder(args.output)
+    # Option B: output is optional. Only normalize/create folder if a path is provided.
+    if args.output is not None:
+        args.output = ensure_output_folder(args.output)
 
     if os.path.exists(args.output) and not args.force:
         new = timestamped_path(args.output)
