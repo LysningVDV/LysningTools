@@ -63,4 +63,4 @@ Chem_Annotator/chem_annotator/canonical_schema.json
 
 # Tool run outputs
 output/
-Tools/output/
+Tools/output/pipeline_inputs/

@@ -34,10 +34,15 @@ def process_file(
             + "\nFix: pass correct --cas-col/--code-col/--name-col for this file."
         )
 
-    required = ["CAS", "Code Unique", "Designation"]
+    # Strict column presence check: use selected headers (not hard-coded defaults)
+    required = [cas_col, code_col, name_col]
     missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}. Found: {list(df.columns)}")
+    if missing and strict:
+        raise ValueError(
+            f"Missing required columns: {missing}\n"
+            f"Found columns: {list(df.columns)}\n"
+            f"Fix: pass correct --cas-col/--code-col/--name-col for this file."
+        )
 
     by_code, by_desig = build_evidence_indexes(df)
     ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -114,34 +119,30 @@ def process_file(
 
         fixed_cells.append(build_fixed_cas_cell(cas_cell, code, name, by_code, by_desig))
 
-    # Build the "first valid" dataframe using standardized columns
-    first_valid_df = pd.DataFrame(
-        {
-            "customer_id": customer_id,
-            "timestamp_seen_utc": timestamp_seen_utc,
-            "Customer Code / Code Unique": df[code_col],
-            "Name": df[name_col],              # exact as given
-            "CAS": df[cas_col],                # original cell content
-            "FirstCAS": first_tokens,
-            "FirstCAS_comment": first_comments,
-            "FixedCAS": fixed_cells,
+    # Build the "first valid" dataframe using selected input columns, but standardized output headers
+    first_valid_df = df[[code_col, name_col, cas_col]].copy()
+    first_valid_df = first_valid_df.rename(
+        columns={
+            code_col: "Customer Code / Code Unique",
+            name_col: "Name",
+            cas_col: "CAS",
         }
     )
 
-    first_valid_df = first_valid_df.drop_duplicates(
-        subset=["customer_id", "Customer Code / Code Unique", "Name", "CAS"],
-        keep="first",
-    )
-
-    first_valid_df = df[["Code Unique", "Designation", "CAS"]].copy()
+    # Add the derived columns
     first_valid_df["FirstCAS"] = first_tokens
     first_valid_df["FirstCAS_comment"] = first_comments
     first_valid_df["FixedCAS"] = fixed_cells
+
+    # Add run metadata (same as exploded output)
+    first_valid_df["customer_id"] = customer_id
+    first_valid_df["timestamp_seen_utc"] = timestamp_seen_utc
+
+    # Dedupe deterministically
     first_valid_df = first_valid_df.drop_duplicates(
-        subset=["Code Unique", "Designation", "CAS"], keep="first"
+        subset=["customer_id", "Customer Code / Code Unique", "Name", "CAS"],
+        keep="first"
     )
-
-
 
     # Ensure output folder exists
     outdir.mkdir(parents=True, exist_ok=True)
