@@ -77,10 +77,19 @@ PRIORITY_ORDER = ["smiles", "inchi", "inchikey", "cas", "name"]
 def _looks_like_smiles_value(val: str) -> bool:
     if not isinstance(val, str):
         return False
-    if " " in val:
+
+    s = val.strip()
+
+    # Reject empty / pure digits early (prevents RDKit spam for 0..49)
+    if not s or s.isdigit():
         return False
+
+    # Reject obvious non-SMILES
+    if " " in s:
+        return False
+
     try:
-        mol = Chem.MolFromSmiles(val)
+        mol = Chem.MolFromSmiles(s)
         return mol is not None
     except Exception:
         return False
@@ -541,15 +550,23 @@ def cli():
                 df_wide["inchi_key"] = _clean_series(df_wide[src])
                 break
 
-        if "inchi_key" not in df_wide.columns:
-            df_leg = df_legacy.copy()
-            for src in preferred_sources:
-                if src in df_leg.columns:
-                    df_leg["inchi_key"] = _clean_series(df_leg[src])
+
+        # --- Normalize/ensure canonical inchi_key exists (preferred key for workflow) ---
+        if "inchi_key" not in df.columns:
+            for alt in ("InChIKey", "inchikey", "INCHIKEY", "inchiKey", "final_inchikey"):
+                if alt in df.columns:
+                    df["inchi_key"] = df[alt]
                     break
 
-            if "inchi_key" in df_leg.columns and len(df_leg) == len(df_wide):
-                df_wide["inchi_key"] = df_leg["inchi_key"]
+        # Keep legacy alias too (optional)
+        if "inchi_key" in df.columns and "final_inchikey" not in df.columns:
+            df["final_inchikey"] = df["inchi_key"]
+
+        # Clean/normalize canonical key
+        if "inchi_key" in df.columns:
+            df["inchi_key"] = df["inchi_key"].astype(str).str.strip().str.upper()
+            df.loc[df["inchi_key"].isin(["", "NAN", "NONE"]), "inchi_key"] = pd.NA
+
 
         return df_wide
 

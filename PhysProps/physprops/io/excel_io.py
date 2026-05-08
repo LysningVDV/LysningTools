@@ -507,6 +507,19 @@ def export_physprops_wide(
         first = next(iter(df.keys()))
         df = df[first]
 
+
+    # Accept common InChIKey header variants from inputs
+    if "inchi_key" not in df.columns:
+        for alt in ("InChIKey", "inchikey", "INCHIKEY", "inchiKey"):
+            if alt in df.columns:
+                df["inchi_key"] = df[alt]
+                break
+
+    # Keep legacy alias too (optional but helpful)
+    if "final_inchikey" not in df.columns and "inchi_key" in df.columns:
+        df["final_inchikey"] = df["inchi_key"]
+
+
     # Ensure canonical key exists for governed export
     if "inchi_key" not in df.columns and "final_inchikey" in df.columns:
         df["inchi_key"] = df["final_inchikey"]
@@ -522,7 +535,7 @@ def export_physprops_wide(
 
     export_df = df[EXPORT_COLUMNS].copy()
     write_xlsx_atomic(export_df, output_excel_path, sheet_name="Sheet1")
-    print(f"Exported governed wide physprops table to {output_excel_path}")
+    logger.info("Exported governed wide physprops table to %s", output_excel_path)
 
 def _harmonize_identifiers(df: pd.DataFrame) -> pd.DataFrame:
  
