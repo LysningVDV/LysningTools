@@ -6,8 +6,12 @@ from physprops.util.run_artifacts import utc_stamp, find_tools_root, build_physp
 
 def test_utc_stamp_format():
     s = utc_stamp()
-    assert re.fullmatch(r"\d{8}T\d{6}Z", s), f"Bad utc stamp format: {s}"
-
+    assert len(s) == 8 + 1 + 6 + 6 + 1  # YYYYMMDD + T + HHMMSS + ffffff + Z
+    assert s[8] == "T"
+    assert s[-1] == "Z"
+    assert s[:8].isdigit()
+    assert s[9:15].isdigit()   # HHMMSS
+    assert s[15:21].isdigit()  # microseconds
 
 def test_build_physprops_paths_under_tools_output(tmp_path: Path):
     # Create a fake Tools root marker

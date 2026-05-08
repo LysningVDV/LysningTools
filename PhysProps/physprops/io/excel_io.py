@@ -596,4 +596,3 @@ def _harmonize_identifiers(df: pd.DataFrame) -> pd.DataFrame:
         df = df.drop(columns=drop_cols)
 
     return df
-

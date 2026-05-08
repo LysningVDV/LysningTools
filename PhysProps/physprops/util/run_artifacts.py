@@ -1,14 +1,17 @@
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
+
+import pandas as pd
 
 
 def utc_stamp() -> str:
-    """UTC timestamp for filenames: YYYYMMDDTHHMMSSZ"""
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    # Collision-proof UTC stamp
+    return pd.Timestamp.now("UTC").strftime("%Y%m%dT%H%M%S%fZ")
+
 
 
 def find_tools_root(start: Path | None = None, max_hops: int = 12) -> Path:

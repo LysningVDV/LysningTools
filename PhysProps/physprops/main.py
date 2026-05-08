@@ -12,6 +12,7 @@ Implements:
 Priority Order B for identifiers:
     SMILES > InChI > InChIKey > CAS > Name
 """
+from email.mime import base
 import time
 import json
 import argparse
@@ -21,7 +22,7 @@ import os
 from pathlib import Path
 from typing import Dict, Any, List
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, UTC
 import pandas as pd
 from rdkit import Chem
 from physprops.util.identify import normalize_identifier, detect_identifier_type
@@ -97,6 +98,28 @@ def _looks_like_smiles_value(val: str) -> bool:
         return mol is not None
     except Exception:
         return False
+
+# ------------------------------------------------------------
+# Helper: Normalize InChIKey columns
+# ------------------------------------------------------------
+
+def _normalize_inchikey_columns(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    if "inchi_key" not in df.columns:
+        for alt in ("InChIKey", "inchikey", "INCHIKEY", "inchiKey", "final_inchikey"):
+            if alt in df.columns:
+                df["inchi_key"] = df[alt]
+                break
+
+    if "inchi_key" in df.columns:
+        df["inchi_key"] = df["inchi_key"].astype(str).str.strip().str.upper()
+        df.loc[df["inchi_key"].isin(["", "NAN", "NONE"]), "inchi_key"] = pd.NA
+
+    if "inchi_key" in df.columns and "final_inchikey" not in df.columns:
+        df["final_inchikey"] = df["inchi_key"]
+
+    return df
+
 
 
 # ------------------------------------------------------------
@@ -209,6 +232,59 @@ def pick_best_identifier(row, candidates: Dict[str, List[str]]) -> Dict[str, Any
     warnings.append("No usable identifier found.")
     return {"identifier_value": None, "identifier_type": None, "warnings": warnings}
 
+# ------------------------------------------------------------
+# Ensure InChIKey column exists in wide_df, using legacy_df as fallback if needed
+# ------------------------------------------------------------
+
+def _ensure_inchi_key(df_wide: pd.DataFrame, df_legacy: pd.DataFrame) -> pd.DataFrame:
+    df_wide = df_wide.copy()
+
+    preferred_sources = [
+        "inchi_key",
+        "final_inchikey",
+        "computed_inchikey",
+        "inchikey",
+        "InChIKey",
+        "INCHI_KEY",
+        "INCHIKEY",
+    ]
+
+    def _clean_series(s: pd.Series) -> pd.Series:
+        s = s.astype(str).str.strip().str.upper()
+        s = s.replace({"": None, "NONE": None, "NAN": None, "NaN": None, "nan": None})
+        return s
+
+    # If already present, clean and return
+    if "inchi_key" in df_wide.columns:
+        df_wide["inchi_key"] = _clean_series(df_wide["inchi_key"])
+        return df_wide
+
+    # Try preferred variants in df_wide
+    for src in preferred_sources[1:]:
+        if src in df_wide.columns:
+            df_wide["inchi_key"] = _clean_series(df_wide[src])
+            break
+
+    # Recover from legacy if still missing or all empty
+    if "inchi_key" not in df_wide.columns or df_wide["inchi_key"].isna().all():
+        df_leg = df_legacy.copy()
+
+        if "inchi_key" not in df_leg.columns:
+            for src in preferred_sources[1:]:
+                if src in df_leg.columns:
+                    df_leg["inchi_key"] = _clean_series(df_leg[src])
+                    break
+        else:
+            df_leg["inchi_key"] = _clean_series(df_leg["inchi_key"])
+
+        if "inchi_key" in df_leg.columns and len(df_leg) == len(df_wide):
+            df_wide["inchi_key"] = df_leg["inchi_key"]
+
+    # Always ensure column exists
+    if "inchi_key" not in df_wide.columns:
+        df_wide["inchi_key"] = pd.NA
+
+    return df_wide
 
 # ------------------------------------------------------------
 # Build final fields
@@ -414,9 +490,19 @@ def resolve_dataframe(df: pd.DataFrame, return_wide: bool = False):
 
 def cli():
     t0 = time.time()
+
     parser = argparse.ArgumentParser(description="Physical Properties Retrieval App")
+    parser = argparse.ArgumentParser(description="Physical Properties Retrieval input")
     parser.add_argument("input_excel", help="Path to input Excel file")
-    parser.add_argument("output_excel", help="Path to save output Excel file")
+
+    # Optional (deprecated/ignored) output argument
+    parser.add_argument(
+        "output_excel",
+        nargs="?",
+        default=None,
+        help="(Deprecated/ignored) Output path is no longer used. Outputs are standardized under Tools/output/physprops/.",
+    )
+
     parser.add_argument("--sheet", default=None, help="Sheet name or index. Default: first sheet.")
     parser.add_argument("--log", default="INFO")
     parser.add_argument(
@@ -426,6 +512,9 @@ def cli():
     )
 
     args = parser.parse_args()
+
+# Required input
+
 
     # Standardized run artifact paths (Tools/output/physprops/...)
     run_stamp = utc_stamp()
@@ -467,13 +556,13 @@ def cli():
     # ----------------------------------------------------
     sheet = args.sheet if args.sheet not in (None, "", "None") else None
 
-    # ----------------------------------------------------
-    # Create output folder automatically (based on output_excel)
-    # ----------------------------------------------------
-    output_folder = os.path.dirname(args.output_excel)
-    if output_folder and not os.path.exists(output_folder):
-        os.makedirs(output_folder, exist_ok=True)
-        logger.info(f"Created output directory: {output_folder}")
+    if getattr(args, "output_excel", None):
+        logger.warning(
+            "output_excel argument is deprecated and ignored. "
+            "Legacy output is written to Tools/output/physprops/legacy/ (standardized). "
+            "Provided path was: %s",
+            args.output_excel,
+        )
 
     # ----------------------------------------------------
     # Avoid overwriting existing files (fallback safety)
@@ -496,7 +585,7 @@ def cli():
         Example: out.xlsx -> out__20260427_002139_123.xlsx
         """
         base, ext = os.path.splitext(path)
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # milliseconds
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ") # milliseconds
         return f"{base}__{ts}{ext}"
 
     # ----------------------------------------------------
@@ -506,24 +595,26 @@ def cli():
     # Legacy export: keep backward compatibility.
     # - If user provides an explicit output path, keep it.
     # - Otherwise, default to Tools/output/physprops/legacy_physprops_<UTCSTAMP>.xlsx
-    if getattr(args, "output_excel", None):
-        final_output_path = Path(args.output_excel)
-    else:
-        final_output_path = std_paths["legacy_default"]
+    # Standardized legacy path (always produced)
+    legacy_std_path = Path(std_paths["legacy_default"])
 
+    # Put standardized legacy into a dedicated legacy subfolder (preferred)
+    legacy_std_path = legacy_std_path.parent / "legacy" / legacy_std_path.name
+    legacy_std_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Root folder for all “product” outputs
-    root_dir = Path(final_output_path).resolve().parent
+    # Root folder for all “product” outputs (standardized)
+    root_dir = legacy_std_path.resolve().parents[1]  # .../output/physprops
 
     # ----------------------------------------------------
     # Load & process (single pass)
     # ----------------------------------------------------
-    df = load_excel(args.input_excel, sheet_name=sheet)
-    df = df.copy()
+    df = load_excel(args.input_excel, sheet_name=sheet).copy()
     df["_row_id"] = range(len(df))
 
     t1 = time.time()
     logger.info("Timing: load_excel %.2fs", t1 - t0)
+
+    df = _normalize_inchikey_columns(df)
 
     # Expect resolve_dataframe to support return_wide=True
     pubchem_mod._CACHE_STATS = {k: 0 for k in pubchem_mod._CACHE_STATS}  # reset stats before processing
@@ -535,52 +626,7 @@ def cli():
     # ----------------------------------------------------
     # Ensure out_wide has canonical merge key: inchi_key
     # ----------------------------------------------------
-    def _ensure_inchi_key(df_wide, df_legacy):
-        df_wide = df_wide.copy()
 
-        preferred_sources = [
-            "inchi_key",
-            "final_inchikey",
-            "computed_inchikey",
-            "inchikey",
-            "InChIKey",
-            "INCHI_KEY",
-            "INCHIKEY",
-        ]
-
-        def _clean_series(s):
-            s = s.astype(str).str.strip()
-            s = s.replace({"": None, "None": None, "nan": None, "NaN": None})
-            return s
-
-        if "inchi_key" in df_wide.columns:
-            df_wide["inchi_key"] = _clean_series(df_wide["inchi_key"])
-            return df_wide
-
-        for src in preferred_sources[1:]:
-            if src in df_wide.columns:
-                df_wide["inchi_key"] = _clean_series(df_wide[src])
-                break
-
-
-        # --- Normalize/ensure canonical inchi_key exists (preferred key for workflow) ---
-        if "inchi_key" not in df.columns:
-            for alt in ("InChIKey", "inchikey", "INCHIKEY", "inchiKey", "final_inchikey"):
-                if alt in df.columns:
-                    df["inchi_key"] = df[alt]
-                    break
-
-        # Keep legacy alias too (optional)
-        if "inchi_key" in df.columns and "final_inchikey" not in df.columns:
-            df["final_inchikey"] = df["inchi_key"]
-
-        # Clean/normalize canonical key
-        if "inchi_key" in df.columns:
-            df["inchi_key"] = df["inchi_key"].astype(str).str.strip().str.upper()
-            df.loc[df["inchi_key"].isin(["", "NAN", "NONE"]), "inchi_key"] = pd.NA
-
-
-        return df_wide
 
     out_wide = _ensure_inchi_key(out_wide, out_legacy)
     # Ensure unique column labels before any dedupe/merge/concat steps
@@ -666,10 +712,10 @@ def cli():
     # ----------------------------------------------------
     # 2) Write LEGACY export (timestamped CLI output)
     # ----------------------------------------------------
-    save_excel(out_legacy, final_output_path)
-    logger.info("Saved legacy Excel file: %s", final_output_path)
-
-
+    # 2) Write LEGACY export
+    # 2a) Always write standardized legacy copy
+    save_excel(out_legacy, legacy_std_path)
+    logger.info("Saved standardized legacy Excel file: %s", legacy_std_path)
 
     # ----------------------------------------------------
     # 3) Update/maintain canonical database (derived from WIDE export)
@@ -787,7 +833,7 @@ def cli():
             "timestamp_utc": pd.Timestamp.now("UTC").isoformat(),
             "input_file": str(Path(args.input_excel).resolve()),
             "wide_export_file": str(Path(wide_export_path).resolve()),
-            "legacy_export_file": str(Path(final_output_path).resolve()),
+            "legacy_export_file": str(legacy_std_path.resolve()),
             "rows_wide": int(len(out_wide)),
             "rows_legacy": int(len(out_legacy)),
             "rows_incoming_valid": int(len(incoming)) if incoming is not None else 0,
@@ -823,7 +869,7 @@ def cli():
         "input_file": str(Path(args.input_excel).resolve()),
         "run_outputs": {
             "wide_governed": str(Path(wide_export_path).resolve()),
-            "legacy": str(Path(final_output_path).resolve()),
+           "legacy": str(legacy_std_path.resolve()),
             "temp_out_wide_source": str(Path(tmp_wide_source).resolve()),
         },
         "canonical": {
@@ -846,3 +892,6 @@ def cli():
     t4 = time.time()
     logger.info("Timing: rest (exports/canonical) %.2fs", t4 - t3)
     logger.info("Timing: total %.2fs", t4 - t0)
+
+if __name__ == "__main__":
+    raise SystemExit(cli())
