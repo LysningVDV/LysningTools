@@ -2,9 +2,10 @@
 import argparse
 import os
 import shutil
+import json
 from pathlib import Path
 from typing import Union
-from datetime import datetime
+from datetime import datetime, UTC
 import pandas as pd
 
 from .io_utils import read_smiles_excel, process_dataframe, write_outputs
@@ -24,6 +25,21 @@ DEFAULT_OUTFILE = "smiles_counts.xlsx"
 # Preferred shared canonical folder (same policy as PhysProps)
 ONEDRIVE_CANONICAL_ROOT = Path(r"C:\Users\vdevi\OneDrive - Lysning Innovation Consultants B.V\Lysning\Tools\Canonical_DB")
 PREFERRED_CANONICAL_DIR = ONEDRIVE_CANONICAL_ROOT  # backward-compat alias
+
+def _find_tools_root(start: Path) -> Path:
+    """
+    Walk upward until we find the Tools repo root (identified by Canonical_DB folder).
+    """
+    p = start.resolve()
+    for parent in [p, *p.parents]:
+        if (parent / "Canonical_DB").exists():
+            return parent
+    return p
+
+
+def _utc_stamp() -> str:
+    # Collision-proof UTC stamp
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
 
 def _choose_canonical_root(preferred: Path, fallback: Path) -> Path:
     """
@@ -64,9 +80,28 @@ def main():
         action="store_true",
         help="Disable updating the shared canonical database."
     )
-
+    parser.add_argument(
+    "--outdir",
+    default=None,
+    help="Output directory for run artifacts (default: Tools/output/Chem_Annotator/). If relative, it's relative to the Tools repo root.",
+    )
     args = parser.parse_args()
     sheet: Union[int, str] = int(args.sheet) if str(args.sheet).isdigit() else args.sheet
+    tools_root = _find_tools_root(Path(__file__).resolve())
+    default_outdir = tools_root / "output" / "Chem_Annotator"
+    out_dir = Path(args.outdir).resolve() if args.outdir else default_outdir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    run_stamp = _utc_stamp()
+
+    # Use args.output only as a base filename (ignore any directory component)
+    out_base = Path(args.output).name
+    out_stem = Path(out_base).stem or "smiles_counts"
+
+    smiles_counts_xlsx = out_dir / f"{out_stem}_{run_stamp}.xlsx"
+    smiles_counts_csv = out_dir / f"{out_stem}_{run_stamp}.csv"
+    invalid_smiles_csv = out_dir / f"invalid_smiles_{run_stamp}.csv"
+    manifest_path = out_dir / f"chem_annotator_manifest_{run_stamp}.json"
 
     # Require inchi_key unless canonical update is disabled
     df = read_smiles_excel(args.input, sheet, require_inchi_key=not args.no_canonical)
@@ -74,7 +109,64 @@ def main():
     out_df, invalid, df_empty = process_dataframe(df)
 
     # Write next to the *input* file (i.e., inside chem_annotator by default)
-    write_outputs(out_df, invalid, df_empty, infile=args.input, outfile=args.output)
+    # --- Write standardized run artifacts under Tools/output/Chem_Annotator/ ---
+    out_df.to_excel(smiles_counts_xlsx, index=False, engine="openpyxl")
+    out_df.to_csv(smiles_counts_csv, index=False, encoding="utf-8")
+
+    # Invalid + empty rows (match existing behavior: "Invalid/empty rows listed in invalid_smiles.csv")
+    def _to_df(x):
+        if x is None:
+            return pd.DataFrame()
+        if isinstance(x, pd.DataFrame):
+            return x
+        if isinstance(x, pd.Series):
+            return x.to_frame()
+        if isinstance(x, list):
+            # list of dicts or list of rows -> DataFrame
+            return pd.DataFrame(x)
+        # fallback: wrap scalar/object into 1-row DataFrame
+        return pd.DataFrame([x])
+
+    invalid_df = _to_df(invalid)
+    empty_df = _to_df(df_empty)
+
+    # Combine (may be empty)
+    invalid_all = pd.concat([invalid_df, empty_df], ignore_index=True)
+    invalid_all.to_csv(invalid_smiles_csv, index=False, encoding="utf-8")
+
+    print(f"[OK] Excel written to: {smiles_counts_xlsx}")
+    print(f"[OK] CSV written to: {smiles_counts_csv}")
+
+    files = sorted([p.name for p in out_dir.glob(f'{out_stem}_{run_stamp}*')])
+    print(f"[INFO] Files matching '{out_stem}*' in output folder: {files}")
+
+    print(f"[INFO] Invalid/empty rows listed in: {invalid_smiles_csv}")
+
+    # Manifest (optional but very useful for the later runner)
+    manifest = {
+        "tool": "chem_annotator",
+        "run_stamp_utc": run_stamp,
+        "inputs": {
+            "input_excel": str(Path(args.input).resolve()),
+            "sheet": sheet,
+        },
+        "outputs": {
+            "smiles_counts_xlsx": str(smiles_counts_xlsx.resolve()),
+            "smiles_counts_csv": str(smiles_counts_csv.resolve()),
+            "invalid_smiles_csv": str(invalid_smiles_csv.resolve()),
+        },
+        "counts": {
+            "rows_processed": int(len(df)),
+            "rows_out": int(len(out_df)),
+            "rows_invalid": int(len(invalid_df)),
+            "rows_empty": int(len(empty_df)),
+        },
+    }
+
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+    print(f"[OK] Manifest written: {manifest_path}")
 
 # ----------------------------------------------------
     # Canonical update (shared deterministic writer)
@@ -169,7 +261,7 @@ def main():
             print("[INFO] No rejected rows produced in this run.")
 
         # --- 5) Tool-specific canonical audit (overwrite each run) ---
-        output_file_path = (fallback_root / args.output).resolve()
+        output_file_path = smiles_counts_xlsx.resolve() 
 
         audit_df = pd.DataFrame([{
             "tool": "CHEM_Annotator",
