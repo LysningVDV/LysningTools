@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Run artifacts / generated exports (do not commit)
+*.csv
+*.xlsx
+*.json
+*.html
+*.log
+
+# Common artifact folders (if they appear later)
+output/
+cache/
+caches/
+downloads/
+data/
