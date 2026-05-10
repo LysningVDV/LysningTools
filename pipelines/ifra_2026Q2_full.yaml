@@ -1,0 +1,40 @@
+# NOTE: Draft pipeline definition (not currently used by pipeline_run_customer.py).
+# Kept for future config-driven runner
+
+pipeline:
+  name: IFRA_2026Q2_full
+  run_tag: 2026Q2_full
+
+input:
+  cas_file: pipeline_inputs/IFRA/2026Q2/ifra_dedup_by_cas.csv
+  cas_column: cas
+  source: IFRA
+
+stages:
+
+  - stage: cas_resolution
+    tool: Lysning_CASResolver
+    params:
+      output: output/Lysning_CASResolver/IFRA_2026Q2_resolved.csv
+
+  - stage: db1_ingest
+    tool: Canonical_DB.ingest_structures
+    params:
+      input: output/Lysning_CASResolver/IFRA_2026Q2_resolved.csv
+      key: inchikey
+      db: output/Canonical_DB/db1_canonical.xlsx
+
+  - stage: physchem
+    tool: PhysProps.compute
+    params:
+      input: output/Canonical_DB/db1_canonical.xlsx
+      structure_column: smiles
+      key: inchikey
+      output: output/PhysProps/IFRA_2026Q2_physchem.csv
+
+  - stage: attach_physchem
+    tool: Canonical_DB.attach_properties
+    params:
+      db: output/Canonical_DB/db1_canonical.xlsx
+      props: output/PhysProps/IFRA_2026Q2_physchem.csv
+      key: inchikey
