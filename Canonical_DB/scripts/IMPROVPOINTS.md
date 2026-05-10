@@ -1,3 +1,158 @@
+UPDATED PLAN:
+✅ Keep DB1/DB2 live databases in %LOCALAPPDATA%/Lysning/Canonical_DB/
+✅ Keep audit/backups under Tools/Canonical_DB/
+✅ .gitignore ignores:
+
+pipeline_inputs/ (customer files)
+output/ (run artifacts)
+Canonical_DB/exports_pipeline/ (intermediate glue)
+
+
+✅ Per-customer CAS view export (--customer-id) with suffixes
+✅ DB2 customer_map sheet + “latest wins” upsert
+✅ Lightweight pipeline runner (single-customer sequential)
+✅ Minimal tests for:
+
+CAS_Structurer strict mapping
+DB2 upsert latest wins
+per-customer overlay export
+
+
+✅ README draft + “operator cheat sheet” integration work started
+
+Status: ✅ done (core), 🟡 README polishing ongoing
+
+Phase 1 — Point A: CASResolver + PhysProps robustness & speed (your chosen focus)
+A1) Sleep prevention in CASResolver
+
+✅ Implemented and verified: “Sleep prevention activated.”
+
+A2) DB2-first conservative caching in CASResolver
+
+✅ Implemented and verified:
+
+“DB2 cache enabled (eligible entries=1327)”
+“Cached via DB2: 1312”
+“DB2 cache misses: 1743”
+
+
+✅ Added cache stats to printed summary
+🟡 Mode clarity: decide behavior on misses (see A2.2 below)
+
+A2.2) Add explicit --cache-only flag (recommended)
+This is the “make behavior explicit” step:
+
+Default: cache-first then resolve misses
+--cache-only: cache-first and do not resolve misses
+
+Status: ❌ not yet implemented (but very small change)
+A3) Negative caching for hopeless cases (optional tail control)
+
+Skip retrying repeated unresolved entries unless --force or stale threshold
+
+Status: ❌ not implemented
+A4) RDKit parse hardening (SMILES + InChI)
+
+✅ Implemented at the choke point:
+
+strip |...| from SMILES
+guard InChI parsing (startswith("InChI="))
+keep debug logs
+
+
+
+A5) Optional: reduce RDKit warning spam
+
+Add --quiet-rdkit-warn to disable rdApp.warning during batch runs
+
+Status: ❌ not implemented
+A6) Optional: honest timing (wall vs active)
+
+Report both datetime.now(UTC) (wall) and perf_counter() (active)
+
+Status: ❌ not implemented
+B1) PhysProps DB1-first skip (high value)
+
+Skip PubChem lookups for InChIKeys already complete in DB1
+Reduces network calls and transient errors
+
+Status: ❌ not implemented
+Phase 1 status: ✅ major wins landed; 🟡 one key small UX flag remaining (--cache-only); ❌ PhysProps caching still pending
+
+Phase 2 — Option C: DB1 structure completeness (your preference)
+You strongly want DB1 to have SMILES/InChI for more than 756/1555 rows.
+C1) Add explicit DB1 structure backfill tool (recommended first step)
+New script:
+
+Canonical_DB/scripts/backfill_db1_structures.py
+
+Policy:
+
+Backfill DB1 rows where inchi_key exists but smiles/inchi missing
+Source priority:
+
+DB2 registry (local, preferred)
+PubChem lookup by InChIKey (cached, fallback)
+
+
+Only for joinable cas_status == valid by default
+Provenance fields + audit + manifest
+Never overwrite existing unless --force
+
+Status: ❌ not implemented
+C2) Later: centralize DB1 identity normalization (dual-identity policy)
+
+If SMILES exists and InChIKey missing → DB1 mints InChIKey deterministically
+SMILES stays “functional representation”, InChIKey is canonical identity
+
+Status: ❌ not implemented (concept agreed)
+
+Phase 3 — Authority vs Customer semantics (your earlier architectural points)
+These were explicitly identified as “later refinements” and remain in the plan.
+S1) Introduce dataset_role = customer|authority
+
+e.g., --dataset-role authority --authority IFRA
+
+Status: ❌ not implemented
+S2) CAS_Structurer authority mode (no customer code required)
+
+customer_code optional
+dedupe keys become CAS-only (or customer_id+CAS)
+eliminate “fake codes” for authority datasets
+
+Status: ❌ not implemented
+S3) Keep GS reference-only + compatible with dual identity
+
+GS can contribute SMILES
+never mints identity
+only enters DB1 through governed step
+
+Status: ✅ policy decided, implementation later
+
+Phase 4 — Runner ergonomics & docs polish
+R1) Runner auto-load columns.json
+
+avoid manual casing mistakes (Name vs NAME)
+reproducibility
+
+Status: ❌ not implemented
+R2) Runner --dry-run
+
+print planned commands + paths, no execution
+
+Status: ❌ not implemented
+D1) Finalize README set
+
+top-level README + optional tool READMEs
+include “known warnings” section (RDKit stereo/protonation, CXSMILES pipe stripping)
+include “modes” section: cache-only vs resolve-misses vs force-refresh
+
+Status: 🟡 partially done (draft exists; needs consolidation)
+
+##############################################################################
+PREVIOUS PLAN - DOUBLECHECK WHETHER EERYTHING COVERED!
+##############################################################################
+
 Key Improvement Points (Agreed Direction)
 1. Make Authority vs Customer an Explicit Concept in Tooling
 Current situation

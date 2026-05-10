@@ -27,10 +27,24 @@ from canonical_common.cas_registry import (
     write_audit_workbook_atomic,
     backup_registry_to_onedrive,
     get_db2_local_paths,
+    REGISTRY_SHEET,
 )
 from canonical_common.cas_registry_adapters import incoming_from_resolver
 
+
 logger = logging.getLogger(__name__)
+
+def prevent_sleep_windows() -> None:
+    """
+    Prevent Windows from sleeping while process runs. Safe no-op if fails.
+    """
+    try:
+        import ctypes
+        ES_CONTINUOUS = 0x80000000
+        ES_SYSTEM_REQUIRED = 0x00000001
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------
 #HOOK USAGE for DB2 registry update :
@@ -44,11 +58,17 @@ def _repo_root_from_this_file() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _update_db2_registry_from_resolver_df(df_output: pd.DataFrame) -> None:
-    if df_output is None or len(df_output) == 0:
-        return
+def _load_db2_context(repo_root: Path | None = None):
+    """
+    Load DB2 governance + local paths + allowlist + existing registry.
 
-    repo_root = _repo_root_from_this_file()
+    Returns:
+      repo_root, governance_root, schema_path, audit_path, backups_dir,
+      allowlist, paths, existing_registry_df
+    """
+    if repo_root is None:
+        repo_root = _repo_root_from_this_file()
+
     governance_root = repo_root / "Canonical_DB"
 
     schema_path = governance_root / "cas_registry_schema.json"
@@ -58,12 +78,49 @@ def _update_db2_registry_from_resolver_df(df_output: pd.DataFrame) -> None:
     allowlist = load_or_init_allowlist(schema_path)
     paths = get_db2_local_paths()
 
+    # IMPORTANT: make sure we read the correct sheet
+    existing = read_registry_excel(paths["xlsx"], allowlist, sheet_name=REGISTRY_SHEET)
 
+    return (
+        repo_root, governance_root, schema_path, audit_path, backups_dir,
+        allowlist, paths, existing
+    )
+def _update_db2_registry_from_resolver_df(df_output: pd.DataFrame) -> None:
+    if df_output is None or len(df_output) == 0:
+        return
 
-    existing = read_registry_excel(paths["xlsx"], allowlist)
+    (
+        repo_root, governance_root, schema_path, audit_path, backups_dir,
+        allowlist, paths, existing
+    ) = _load_db2_context()
 
     # Adapt resolver-native columns -> DB2 schema columns
     incoming = incoming_from_resolver(df_output)
+
+    # Always-on guard: if everything becomes mixture, adapter logic is likely wrong.
+    if incoming["cas_status"].astype(str).str.lower().eq("mixture").all():
+        logger.warning(
+            "DB2 adapter produced cas_status='mixture' for all %d rows. "
+            "This is likely a mixture_type mapping bug. Proceeding anyway.",
+            len(incoming),
+        )
+
+    if incoming["cas_number_normalized"].astype(str).str.strip().eq("").all():
+        logger.warning(
+            "DB2 registry update skipped: incoming has empty cas_number_normalized for all rows (adapter mismatch)."
+        )
+        return
+
+    result = upsert_registry(existing, incoming, allowlist)
+
+    # Write local DB2 + exports
+    write_registry_excel_atomic(paths["xlsx"], result.updated_registry)
+    export_registry_csv(result.updated_registry, paths["csv"])
+    export_registry_sqlite(result.updated_registry, paths["sqlite"])
+
+    # Governance audit + backup
+    write_audit_workbook_atomic(audit_path, result.audit, result.rejected)
+    backup_registry_to_onedrive(paths["xlsx"], backups_dir)
     
     # Always-on guard: if everything becomes mixture, adapter logic is likely wrong.
     # Allow it only if you truly expect a 100% mixture batch (rare).
@@ -144,7 +201,7 @@ def _row_from_cas_result(raw_value, result, original_name, cas_validity):
         "warning": result.get("warning", ""),
         "mixture_type": mixture,
         "cas_validity": cas_validity,
-        "timestamp": result.get("timestamp") or datetime.utcnow().isoformat() + "Z",
+        "timestamp": result.get("timestamp") or datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
 
 
@@ -163,7 +220,7 @@ def _row_from_name_result(raw_value, best, warnings, original_cas):
         "warning": "; ".join(warnings),
         "mixture_type": mixture,
         "cas_validity": "",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
 
 
@@ -182,7 +239,7 @@ def _row_from_opsin_result(raw_value, original_cas, opsin):
         "warning": "; ".join(opsin.get("warning_list", [])),
         "mixture_type": mixture,
         "cas_validity": "",
-        "timestamp": opsin.get("timestamp")
+        "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
 
 
@@ -201,6 +258,24 @@ def _empty_failure_row(raw_value, reason):
         "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
 
+def build_db2_cache_lookup(db2_registry_df):
+    # normalize key
+    reg = db2_registry_df.copy()
+    reg["cas_number_normalized"] = reg["cas_number_normalized"].astype(str).str.strip()
+    reg["cas_status"] = reg["cas_status"].astype(str).str.lower().str.strip()
+    reg["inchi_key"] = reg["inchi_key"].astype(str).str.strip()
+
+    eligible = reg[
+        (reg["cas_number_normalized"] != "")
+        & (reg["inchi_key"] != "")
+        & (reg["cas_status"] == "valid")
+    ].copy()
+
+    # Keep last occurrence if duplicates exist
+    eligible = eligible.drop_duplicates(subset=["cas_number_normalized"], keep="last")
+
+    # Dict: cas -> row dict
+    return {row["cas_number_normalized"]: row for _, row in eligible.iterrows()}
 
 # ---------------------------------------------------------------------
 # MULTI‑CAS HELPER
@@ -217,7 +292,7 @@ def split_cas_candidates(raw_cas: str) -> list[str]:
 # CORE RESOLUTION
 # ---------------------------------------------------------------------
 
-def resolve_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+def resolve_dataframe(df: pd.DataFrame, db2_cache: dict[str, dict] | None = None) -> tuple[pd.DataFrame, dict]:
     df.columns = (
         df.columns.str.replace("'", "", regex=False)
                   .str.replace("\u00A0", " ", regex=False)
@@ -238,6 +313,8 @@ def resolve_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     count_name_lookup = 0
     count_chemspider = 0
     count_unresolved = 0
+    count_db2_cache = 0
+    count_db2_cache_miss = 0
 
     total_rows = len(df)
     logger.info("Starting resolution of %d rows", total_rows)
@@ -274,28 +351,49 @@ def resolve_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
                 cas_results = []
 
-                # 2. Resolve each candidate — accept even if SMILES/INCHI empty
+                # 2. Resolve each candidate — DB2 cache first (conservative)
                 for c in valid_candidates:
                     cs_handler.buffer.clear()
+
+                    # --- DB2-first cache short-circuit ---
+                    cached = None
+                    if db2_cache is not None:
+                        key = str(c).strip()
+                        cached = db2_cache.get(key)
+
+
+                    if cached is not None:
+                        count_db2_cache += 1
+                        tmp = dict(cached)
+                        tmp["cas"] = c
+                        tmp["chemspider_used"] = False
+                        tmp["source"] = "db2_cache"
+                        cas_results.append(tmp)
+                        continue
+                    else:
+                        count_db2_cache_miss += 1
+
+                    # --- Normal resolution ---
                     try:
                         res = resolve_cas(c)
+                        chemspider_used = any(
+                            "CHEMSPIDER_USED" in rec.getMessage()
+                            for rec in cs_handler.buffer
+                        )
+
+                        tmp = dict(res)
+                        tmp["cas"] = c
+                        tmp["chemspider_used"] = chemspider_used
+                        cas_results.append(tmp)
                     except Exception:
                         continue
-
-                    chemspider_used = any(
-                        "CHEMSPIDER_USED" in rec.getMessage()
-                        for rec in cs_handler.buffer
-                    )
-
-                    tmp = dict(res)
-                    tmp["cas"] = c
-                    tmp["chemspider_used"] = chemspider_used
-                    cas_results.append(tmp)
 
                 # 3. Select winner via ranking
                 def rank_for(result):
                     src = (result.get("source") or "").lower()
                     cs = result.get("chemspider_used")
+                    if src == "db2_cache":
+                        return 0
                     if src == "cas":
                         if cs:
                             return 2   # CAS + ChemSpider
@@ -342,7 +440,10 @@ def resolve_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
                         count_chemspider += 1
 
                     src = (winner.get("source") or "").lower()
-                    if src == "cas":
+                    if src == "db2_cache":
+                        # treat cache hit as success, but separate from "new" resolution
+                        pass
+                    elif src == "cas":
                         count_cas += 1
                     elif src == "pubchem":
                         count_pubchem += 1
@@ -413,6 +514,8 @@ def resolve_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         "resolved_cactus": count_cactus,
         "resolved_name_lookup": count_name_lookup,
         "chemspider_used": count_chemspider,
+        "cached_db2_hits": count_db2_cache,
+        "cached_db2_misses": count_db2_cache_miss,
         "unresolved": count_unresolved,
         "total": total_rows,
         "runtime": str(elapsed)
@@ -459,8 +562,8 @@ def main():
     default_outdir = tools_root / "output" / "CASResolver"
     default_outdir.mkdir(parents=True, exist_ok=True)
 
-    run_stamp = _utc_stamp()
-    
+    run_stamp = _utc_stamp()  # <-- MUST be before args.output assignment
+
     if args.output is None:
         args.output = str(default_outdir / f"casresolver_output_{run_stamp}.xlsx")
 
@@ -475,7 +578,9 @@ def main():
         level=logging.DEBUG if args.debug else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
-
+    prevent_sleep_windows()
+    logger.info("Sleep prevention activated.")
+    
     # Option B: output is optional. Only normalize/create folder if a path is provided.
     if args.output is not None:
         args.output = ensure_output_folder(args.output)
@@ -488,7 +593,17 @@ def main():
         args.output = new
 
     df_input = read_input_excel(args.input)
-    df_output, summary = resolve_dataframe(df_input)
+    
+    # --- Load DB2 registry for cache short-circuit (sheet: registry) ---
+    (
+        repo_root, governance_root, schema_path, audit_path, backups_dir,
+        allowlist, paths, db2_registry_df
+    ) = _load_db2_context(repo_root=tools_root)
+
+    db2_cache = build_db2_cache_lookup(db2_registry_df)
+    logger.info("DB2 cache enabled (eligible entries=%d)", len(db2_cache))
+    df_output, summary = resolve_dataframe(df_input, db2_cache=db2_cache)
+
 
     logger.info("DB2 registry update: starting (rows=%d)", len(df_output))
     _update_db2_registry_from_resolver_df(df_output)
@@ -505,6 +620,8 @@ def main():
         f"\nResolved via Cactus:    {summary['resolved_cactus']}"
         f"\nResolved via NameLookup:{summary['resolved_name_lookup']}"
         f"\nChemSpider usages:      {summary['chemspider_used']}"
+        f"\nCached via DB2:         {summary['cached_db2_hits']}"
+        f"\nDB2 cache misses:       {summary['cached_db2_misses']}"
         f"\nUnresolved:             {summary['unresolved']}"
         f"\nRuntime:                {summary['runtime']}"
         "\n=========================================\n"
