@@ -2,11 +2,11 @@ import argparse
 from email import parser
 import logging
 import os
-from datetime import datetime, UTC
+from datetime import datetime, UTC, time
 from logging.handlers import MemoryHandler
 from pathlib import Path
 import json
-
+from time import perf_counter
 import pandas as pd
 from tqdm import tqdm
 
@@ -292,13 +292,20 @@ def split_cas_candidates(raw_cas: str) -> list[str]:
 # CORE RESOLUTION
 # ---------------------------------------------------------------------
 
-def resolve_dataframe(df: pd.DataFrame, db2_cache: dict[str, dict] | None = None) -> tuple[pd.DataFrame, dict]:
+
+def resolve_dataframe(
+    df: pd.DataFrame,
+    db2_cache: dict[str, dict] | None = None,
+    cache_only: bool = False,
+) -> tuple[pd.DataFrame, dict]:
+    # --- Column hygiene (keep!) ---
     df.columns = (
         df.columns.str.replace("'", "", regex=False)
                   .str.replace("\u00A0", " ", regex=False)
                   .str.replace("\ufeff", "", regex=False)
                   .str.strip()
     )
+
 
     if "Name" not in df.columns or "CAS" not in df.columns:
         raise ValueError("Input Excel must contain Name and CAS")
@@ -372,10 +379,16 @@ def resolve_dataframe(df: pd.DataFrame, db2_cache: dict[str, dict] | None = None
                         continue
                     else:
                         count_db2_cache_miss += 1
+                    
+                    if cache_only:
+                        # Cache-only mode: do not attempt network resolution for misses
+                        continue
 
                     # --- Normal resolution ---
                     try:
-                        res = resolve_cas(c)
+                        res = resolve_cas(c)                        
+                        if not res:
+                            continue
                         chemspider_used = any(
                             "CHEMSPIDER_USED" in rec.getMessage()
                             for rec in cs_handler.buffer
@@ -516,6 +529,7 @@ def resolve_dataframe(df: pd.DataFrame, db2_cache: dict[str, dict] | None = None
         "chemspider_used": count_chemspider,
         "cached_db2_hits": count_db2_cache,
         "cached_db2_misses": count_db2_cache_miss,
+        "cache_only": bool(cache_only),
         "unresolved": count_unresolved,
         "total": total_rows,
         "runtime": str(elapsed)
@@ -555,6 +569,11 @@ def main():
 
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+    "--cache-only",
+    action="store_true",
+    help="Use DB2 cache only: do not resolve cache misses via PubChem/Cactus/etc. (fast rerun/offline mode).",
+)
 
     args = parser.parse_args()
 
@@ -581,6 +600,9 @@ def main():
     prevent_sleep_windows()
     logger.info("Sleep prevention activated.")
     
+    t0_wall = datetime.now(UTC)
+    t0_perf = perf_counter()
+    
     # Option B: output is optional. Only normalize/create folder if a path is provided.
     if args.output is not None:
         args.output = ensure_output_folder(args.output)
@@ -602,7 +624,7 @@ def main():
 
     db2_cache = build_db2_cache_lookup(db2_registry_df)
     logger.info("DB2 cache enabled (eligible entries=%d)", len(db2_cache))
-    df_output, summary = resolve_dataframe(df_input, db2_cache=db2_cache)
+    df_output, summary = resolve_dataframe(df_input, db2_cache=db2_cache, cache_only=args.cache_only)
 
 
     logger.info("DB2 registry update: starting (rows=%d)", len(df_output))
@@ -622,12 +644,18 @@ def main():
         f"\nChemSpider usages:      {summary['chemspider_used']}"
         f"\nCached via DB2:         {summary['cached_db2_hits']}"
         f"\nDB2 cache misses:       {summary['cached_db2_misses']}"
+        f"\nCache-only mode:        {summary.get('cache_only', False)}"
         f"\nUnresolved:             {summary['unresolved']}"
         f"\nRuntime:                {summary['runtime']}"
         "\n=========================================\n"
     )
 
+    total_wall = datetime.now(UTC) - t0_wall
+    total_perf = perf_counter() - t0_perf
+
     logger.info(f"\nOutput written to:\n   {args.output}\n")
+    logger.info("Total wall time: %s", str(total_wall))
+    logger.info("Total active time (perf): %.2fs", total_perf)
 
 
 if __name__ == "__main__":
